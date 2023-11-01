@@ -24,6 +24,8 @@ void setup() {
     UART.setTX(TX_PIN);
     UART.setRX(RX_PIN);
     UART.begin(BAUD_RATE);
+
+    DEBUG.init();
     
     pinMode(LED_BUILTIN, OUTPUT);
 }
