@@ -4,7 +4,7 @@
 #include <debug.h>
 
 #define DEBUG_MODE 0 //0 or 1
-#define SYNTH_ID 1 // 1 or 2
+#define SYNTH_ID 2 // 1 or 2
 
 #if SYNTH_ID == 1
     #define SDA_PIN 0
@@ -28,7 +28,8 @@ int dataPosition = 0;
 #define PIN_I2S_DOUT 20
 #define PIN_I2S_BCLK 21
 #define PIN_I2S_LRCLK 22
-#define BUFFER_SIZE (int32_t)(sampleRate * 0.2)  // 0.8 seconds buffer
+#define BUFFER_SIZE 256
+
 I2S i2s(OUTPUT);
 const int32_t sampleRate = 48000;
 const float VOLUME_GAIN = 2.0f;
@@ -38,6 +39,9 @@ uint32_t phase       = 0;
 uint32_t phase_delta = 0;
 
 void midiLoop();
+
+bool isPlaying = false;
+int lastKeyPressed = 0; // 最後に押されたキーの情報を保存する変数
 
 int16_t triangle(uint32_t phase) {
   phase += (1 << 30);
@@ -60,6 +64,10 @@ void applyFade(int16_t *buffer, size_t size) {
     }
 }
 
+float midiNoteToFrequency(int midiNote) {
+    return 440.0 * pow(2.0, (midiNote - 69) / 12.0);
+}
+
 void receiveEvent(int bytes) {
 
     dataPosition = 0; // バッファ位置を初期化
@@ -74,6 +82,22 @@ void receiveEvent(int bytes) {
         }
     }
     receivedData[dataPosition] = '\0'; // 文字列の終端を追加
+
+    int receivedInt = atoi(receivedData);
+
+    if(lastKeyPressed == receivedInt-10000) {
+        isPlaying = false; // 最後に押されたキーのみで音を停止
+        lastKeyPressed = 0; // 最後に押されたキーの情報をリセット
+    } else {
+        // 受信された周波数が1万Hzを超える場合、処理を終了
+        if (receivedInt > 10000) {
+            return;
+        }
+
+        lastKeyPressed = receivedInt; // 最後に押されたキーの情報を更新
+        phase_delta = midiNoteToFrequency(receivedInt) * (float)(1ULL << 32) / sampleRate;  // 周波数を計算
+        isPlaying = true; // 音を再生
+    }
 }
 
 void setup() {
@@ -95,28 +119,23 @@ void setup() {
 }
 
 void loop() {
-    if (dataPosition > 0) { // データが受信された場合
-
-        DEBUG.print("Received from UART: ");
-        DEBUG.println(receivedData);
+    if (isPlaying) {
+        static size_t buffer_index = 0;
 
         digitalWrite(LED_BUILTIN, HIGH);
-
-        phase_delta = (float)atof(receivedData) * (float)(1ULL << 32) / sampleRate;
-        generate_triangle(buffer, BUFFER_SIZE, &phase, phase_delta);
-        applyFade(buffer, BUFFER_SIZE);
-
-        for (size_t i = 0; i < BUFFER_SIZE; i++) {
-            i2s.write(buffer[i]);  // L
-            i2s.write(buffer[i]);  // R
+        if (buffer_index == BUFFER_SIZE) {
+            generate_triangle(buffer, BUFFER_SIZE, &phase, phase_delta);
+            buffer_index = 0;
         }
 
-        delay(200);
+        while (buffer_index < BUFFER_SIZE) {
+            i2s.write(buffer[buffer_index]);  // L
+            i2s.write(buffer[buffer_index]);  // R
+            buffer_index++;
+        }
+    }else{
         digitalWrite(LED_BUILTIN, LOW);
-
-        dataPosition = 0; // 受信データ位置をリセット
     }
-    delay(10);
 }
 
 void midiLoop() {
