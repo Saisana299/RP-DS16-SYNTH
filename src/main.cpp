@@ -4,21 +4,19 @@
 #include <debug.h>
 
 #define DEBUG_MODE 0 //0 or 1
-#define SYNTH_ID 2 // 1 or 2
+#define SYNTH_ID 1 // 1 or 2
+
+#define SDA_PIN 0
+#define SCL_PIN 1
+
+TwoWire& I2C = Wire;
+Debug DEBUG(DEBUG_MODE, Serial2, 8, 9, 115200);
 
 #if SYNTH_ID == 1
-    #define SDA_PIN 0
-    #define SCL_PIN 1
     #define I2C_ADDR 0x08
-    TwoWire& I2C = Wire;
-    Debug DEBUG(DEBUG_MODE, Serial2, 8, 9, 115200);
-
+    
 #elif SYNTH_ID == 2
-    #define SDA_PIN 2
-    #define SCL_PIN 3
     #define I2C_ADDR 0x09
-    TwoWire& I2C = Wire1;
-    Debug DEBUG(DEBUG_MODE, Serial1, 12, 13, 115200);
 
 #endif
 
