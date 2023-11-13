@@ -4,7 +4,7 @@
 #include <debug.h>
 #include <synth.h>
 
-#define SYNTH_ID 1 // 1 or 2
+#define SYNTH_ID 2 // 1 or 2
 
 #define DEBUG_MODE 0 //0 or 1
 Debug debug(DEBUG_MODE, Serial2, 8, 9, 115200);
@@ -41,6 +41,9 @@ void midiLoop();
 bool isPlaying = false;
 int lastKeyPressed = 0; // 最後に押されたキーの情報を保存する変数
 
+bool isFadeIn = false;
+bool isFadeOut = false;
+
 float midiNoteToFrequency(int midiNote) {
     return 440.0 * pow(2.0, (midiNote - 69) / 12.0);
 }
@@ -63,9 +66,10 @@ void receiveEvent(int bytes) {
     int receivedInt = atoi(receivedData);
 
     if(lastKeyPressed == receivedInt-10000) {
-        isPlaying = false; // 最後に押されたキーのみで音を停止
         lastKeyPressed = 0; // 最後に押されたキーの情報をリセット
-        wave.resetPhase(); // 位相をリセット
+        isPlaying = false;
+        isFadeOut = true; // フェードアウト後停止
+        
     } else {
         // 受信された周波数が1万Hzを超える場合、処理を終了
         if (receivedInt > 10000) {
@@ -74,6 +78,9 @@ void receiveEvent(int bytes) {
 
         lastKeyPressed = receivedInt; // 最後に押されたキーの情報を更新
         wave.setFrequency(midiNoteToFrequency(receivedInt)); // 周波数を設定
+        if(lastKeyPressed == 0) {
+            isFadeIn = true; // 無音だった時のみフェードイン
+        }
         isPlaying = true; // 音を再生
     }
 }
@@ -106,12 +113,40 @@ void loop() {
             buffer_index = 0;
         }
 
+        if (isFadeIn) {
+            wave.applyFadeIn(buffer, BUFFER_SIZE, 10);
+            isFadeIn = false;
+        }
+
         while (buffer_index < BUFFER_SIZE) {
             i2s.write(buffer[buffer_index]);  // L
             i2s.write(buffer[buffer_index]);  // R
             buffer_index++;
         }
-    }else{
+
+    } else if(isFadeOut) {
+        static size_t buffer_index = 0;
+
+        digitalWrite(LED_BUILTIN, HIGH);
+        if (buffer_index == BUFFER_SIZE) {
+            wave.generate(buffer, BUFFER_SIZE);
+            buffer_index = 0;
+        }
+
+        if (isFadeOut) {
+            wave.applyFadeOut(buffer, BUFFER_SIZE, 60);
+        }
+
+        while (buffer_index < BUFFER_SIZE) {
+            i2s.write(buffer[buffer_index]);  // L
+            i2s.write(buffer[buffer_index]);  // R
+            buffer_index++;
+        }
+
+        isFadeOut = false;
+        wave.resetPhase();
+
+    } else {
         digitalWrite(LED_BUILTIN, LOW);
     }
 }

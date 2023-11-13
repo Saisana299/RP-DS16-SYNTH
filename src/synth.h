@@ -31,4 +31,20 @@ public:
     void resetPhase() {
         phase = 0;
     }
+
+    void applyFadeIn(int16_t *buffer, size_t size, int8_t fade_in_samples) {
+        for (size_t i = 0; i < size && i < fade_in_samples; ++i) {
+            float fade_gain = (float)i / fade_in_samples;
+            buffer[i] *= fade_gain;
+        }
+    }
+
+    void applyFadeOut(int16_t *buffer, size_t size, int8_t fade_out_samples) {
+        if (size < fade_out_samples) return;
+
+        for (size_t i = size - fade_out_samples; i < size; ++i) {
+            float fade_gain = (float)(size - i) / fade_out_samples;
+            buffer[i] *= fade_gain;
+        }
+    }
 };
