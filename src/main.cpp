@@ -4,11 +4,13 @@
 #include <debug.h>
 #include <synth.h>
 
-#define SYNTH_ID 2 // 1 or 2
+#define SYNTH_ID 1 // 1 or 2
 
+// debug 関連
 #define DEBUG_MODE 0 //0 or 1
 Debug debug(DEBUG_MODE, Serial2, 8, 9, 115200);
 
+// CTRL 関連
 #if SYNTH_ID == 1
     #define I2C_ADDR 0x08
     
@@ -24,6 +26,7 @@ TwoWire& i2c = Wire;
 char receivedData[32]; // 受信データのためのバッファ
 int dataPosition = 0;
 
+// DAC 関連
 #define PIN_I2S_DOUT 20
 #define PIN_I2S_BCLK 21
 #define PIN_I2S_LRCLK 22
@@ -33,10 +36,11 @@ I2S i2s(OUTPUT);
 #define SAMPLE_BITS 16
 #define SAMPLE_RATE 48000
 
+// その他
 WaveGenerator wave;
 int16_t buffer[BUFFER_SIZE];
 
-void midiLoop();
+void loop1();
 
 bool isPlaying = false;
 int lastKeyPressed = 0; // 最後に押されたキーの情報を保存する変数
@@ -100,7 +104,7 @@ void setup() {
     
     pinMode(LED_BUILTIN, OUTPUT);
 
-    multicore_launch_core1(midiLoop);
+    multicore_launch_core1(loop1);
 }
 
 void loop() {
@@ -151,7 +155,7 @@ void loop() {
     }
 }
 
-void midiLoop() {
+void loop1() {
     while(1) {
         // todo
     }
