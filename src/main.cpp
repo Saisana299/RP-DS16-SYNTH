@@ -107,56 +107,54 @@ void setup() {
     multicore_launch_core1(loop1);
 }
 
-void loop() {
-    if (isPlaying) {
-        static size_t buffer_index = 0;
-
-        digitalWrite(LED_BUILTIN, HIGH);
-        if (buffer_index == BUFFER_SIZE) {
-            wave.generate(buffer, BUFFER_SIZE);
-            buffer_index = 0;
-        }
-
-        if (isFadeIn) {
-            wave.applyFadeIn(buffer, BUFFER_SIZE, 10);
-            isFadeIn = false;
-        }
-
-        while (buffer_index < BUFFER_SIZE) {
-            i2s.write(buffer[buffer_index]);  // L
-            i2s.write(buffer[buffer_index]);  // R
-            buffer_index++;
-        }
-
-    } else if(isFadeOut) {
-        static size_t buffer_index = 0;
-
-        digitalWrite(LED_BUILTIN, HIGH);
-        if (buffer_index == BUFFER_SIZE) {
-            wave.generate(buffer, BUFFER_SIZE);
-            buffer_index = 0;
-        }
-
-        if (isFadeOut) {
-            wave.applyFadeOut(buffer, BUFFER_SIZE, 60);
-        }
-
-        while (buffer_index < BUFFER_SIZE) {
-            i2s.write(buffer[buffer_index]);  // L
-            i2s.write(buffer[buffer_index]);  // R
-            buffer_index++;
-        }
-
-        isFadeOut = false;
-        wave.resetPhase();
-
-    } else {
-        digitalWrite(LED_BUILTIN, LOW);
-    }
-}
+void loop() {} // 使用しない
 
 void loop1() {
     while(1) {
-        // todo
+        if (isPlaying) {
+            static size_t buffer_index = 0;
+
+            digitalWrite(LED_BUILTIN, HIGH);
+            if (buffer_index == BUFFER_SIZE) {
+                wave.generate(buffer, BUFFER_SIZE);
+                buffer_index = 0;
+            }
+
+            if (isFadeIn) {
+                wave.applyFadeIn(buffer, BUFFER_SIZE, 10);
+                isFadeIn = false;
+            }
+
+            while (buffer_index < BUFFER_SIZE) {
+                i2s.write(buffer[buffer_index]);  // L
+                i2s.write(buffer[buffer_index]);  // R
+                buffer_index++;
+            }
+
+        } else if(isFadeOut) {
+            static size_t buffer_index = 0;
+
+            digitalWrite(LED_BUILTIN, HIGH);
+            if (buffer_index == BUFFER_SIZE) {
+                wave.generate(buffer, BUFFER_SIZE);
+                buffer_index = 0;
+            }
+
+            if (isFadeOut) {
+                wave.applyFadeOut(buffer, BUFFER_SIZE, 60);
+            }
+
+            while (buffer_index < BUFFER_SIZE) {
+                i2s.write(buffer[buffer_index]);  // L
+                i2s.write(buffer[buffer_index]);  // R
+                buffer_index++;
+            }
+
+            isFadeOut = false;
+            wave.resetPhase();
+
+        } else {
+            digitalWrite(LED_BUILTIN, LOW);
+        }
     }
 }
