@@ -3,8 +3,9 @@
 #include <Wire.h>
 #include <debug.h>
 #include <synth.h>
+#include <instructionSet.h>
 
-#define SYNTH_ID 1 // 1 or 2
+#define SYNTH_ID 2 // 1 or 2
 
 // debug 関連
 #define DEBUG_MODE 0 //0 or 1
@@ -23,9 +24,6 @@ TwoWire& i2c = Wire;
 #define SDA_PIN 0
 #define SCL_PIN 1
 
-char receivedData[32]; // 受信データのためのバッファ
-int dataPosition = 0;
-
 // DAC 関連
 #define PIN_I2S_DOUT 20
 #define PIN_I2S_BCLK 21
@@ -43,49 +41,63 @@ int16_t buffer[BUFFER_SIZE];
 void loop1();
 
 bool isPlaying = false;
-int lastKeyPressed = 0; // 最後に押されたキーの情報を保存する変数
+uint8_t lastKeyPressed = 0xff; // 最後に押されたキーの情報を保存する変数
 
 bool isFadeIn = false;
 bool isFadeOut = false;
 
-float midiNoteToFrequency(int midiNote) {
+float midiNoteToFrequency(uint8_t midiNote) {
     return 440.0 * pow(2.0, (midiNote - 69) / 12.0);
 }
 
 void receiveEvent(int bytes) {
+    // 2バイト以上のみ受け付ける
+    if(bytes < 2) return;
 
-    dataPosition = 0; // バッファ位置を初期化
-
-    while(i2c.available()) {
-        receivedData[dataPosition] = i2c.read();
-        dataPosition++;
-
-        if (dataPosition >= sizeof(receivedData) - 1) {
-            // バッファの終端に達した場合、ループを終了
+    int i = 0;
+    uint8_t receivedData[bytes];
+    while (i2c.available()) {
+        uint8_t received = i2c.read();
+        receivedData[i] = received;
+        i++;
+        if (i >= bytes) {
             break;
         }
     }
-    receivedData[dataPosition] = '\0'; // 文字列の終端を追加
 
-    int receivedInt = atoi(receivedData);
+    uint8_t instruction = 0x00; // コード種別
+    if(receivedData[0] == INS_BEGIN) {
+        instruction = receivedData[1];
+    }
 
-    if(lastKeyPressed == receivedInt-10000) {
-        lastKeyPressed = 0; // 最後に押されたキーの情報をリセット
-        isPlaying = false;
-        isFadeOut = true; // フェードアウト後停止
-        
-    } else {
-        // 受信された周波数が1万Hzを超える場合、処理を終了
-        if (receivedInt > 10000) {
-            return;
-        }
+    switch (instruction)
+    {
+        // 例: {INS_BEGIN, SYNTH_NOTE_ON, DATA_BEGIN, 0x01, 0x53}
+        case SYNTH_NOTE_ON:
+            if(bytes < 5) return;
+            {
+                uint8_t note = receivedData[4];
+                lastKeyPressed = note; // 最後に押されたキーの情報を更新
+                wave.setFrequency(midiNoteToFrequency(note)); // 周波数を設定
+                if(lastKeyPressed == 0xff) {
+                    isFadeIn = true; // 無音だった時のみフェードイン
+                }
+                isPlaying = true; // 音を再生
+            }
+            break;
 
-        lastKeyPressed = receivedInt; // 最後に押されたキーの情報を更新
-        wave.setFrequency(midiNoteToFrequency(receivedInt)); // 周波数を設定
-        if(lastKeyPressed == 0) {
-            isFadeIn = true; // 無音だった時のみフェードイン
-        }
-        isPlaying = true; // 音を再生
+        // 例: {INS_BEGIN, SYNTH_NOTE_OFF, DATA_BEGIN, 0x01, 0x53}
+        case SYNTH_NOTE_OFF:
+            if(bytes < 5) return;
+            {
+                uint8_t note = receivedData[4];
+                if(lastKeyPressed == note) {
+                    lastKeyPressed = 0xff; // 最後に押されたキーの情報をリセット
+                    isPlaying = false;
+                    isFadeOut = true; // フェードアウト後停止
+                }
+            }
+            break;
     }
 }
 
