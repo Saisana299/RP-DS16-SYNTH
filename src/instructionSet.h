@@ -12,5 +12,6 @@
 //// データサイズは255が最大だが区切りを利用するとさらに多くのデータを送れます。
 //// 例：{..., 0x80, 0xff, ..., 0x84, 0xff, ...}
 
-#define SYNTH_NOTE_ON  0xBE // ノートオン
-#define SYNTH_NOTE_OFF 0xBF // ノートオフ
+#define SYNTH_NOTE_ON    0xBE // ノートオン
+#define SYNTH_NOTE_OFF   0xBF // ノートオフ
+#define SYNTH_SET_PRESET 0xC0 // プリセット設定

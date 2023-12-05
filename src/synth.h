@@ -6,6 +6,16 @@ private:
     uint32_t phase_delta;
     float volume_gain;
     const int32_t sample_rate;
+    uint8_t preset = 0x01; //todo
+
+    int16_t sine(uint32_t phase) {
+        return 0;
+    }
+
+    int16_t pulse(uint32_t phase) {
+        int16_t value = (phase < (1U << 31)) ? 32767 : -32767;
+        return constrain(value * volume_gain, -32768, 32767);
+    }
 
     int16_t triangle(uint32_t phase) {
         phase += (1 << 30);
@@ -23,7 +33,9 @@ public:
 
     void generate(int16_t *buffer, size_t size) {
         for (size_t i = 0; i < size; i++) {
-            buffer[i] = triangle(phase);
+            if(preset == 0x00) buffer[i] = sine(phase);
+            else if(preset == 0x01) buffer[i] = pulse(phase);
+            else if(preset == 0x02) buffer[i] = triangle(phase);
             phase += phase_delta;
         }
     }
@@ -46,5 +58,9 @@ public:
             float fade_gain = (float)(size - i) / fade_out_samples;
             buffer[i] *= fade_gain;
         }
+    }
+
+    void setPreset(uint8_t id) {
+        preset = id;
     }
 };

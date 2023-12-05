@@ -98,6 +98,14 @@ void receiveEvent(int bytes) {
                 }
             }
             break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_PRESET, DATA_BEGIN, 0x01, 0x02}
+        case SYNTH_SET_PRESET:
+            if(bytes < 5) return;
+            {
+                wave.setPreset(receivedData[4]);
+            }
+            break;
     }
 }
 
