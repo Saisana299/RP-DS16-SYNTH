@@ -5,7 +5,7 @@
 #include <synth.h>
 #include <instructionSet.h>
 
-#define SYNTH_ID 2 // 1 or 2
+#define SYNTH_ID 1 // 1 or 2
 
 // debug 関連
 #define DEBUG_MODE 0 //0 or 1
@@ -141,7 +141,7 @@ void loop1() {
             }
 
             if (isFadeIn) {
-                wave.applyFadeIn(buffer, BUFFER_SIZE, 10);
+                wave.applyFadeIn(buffer, BUFFER_SIZE);
                 isFadeIn = false;
             }
 
@@ -161,7 +161,7 @@ void loop1() {
             }
 
             if (isFadeOut) {
-                wave.applyFadeOut(buffer, BUFFER_SIZE, 60);
+                wave.applyFadeOut(buffer, BUFFER_SIZE);
             }
 
             while (buffer_index < BUFFER_SIZE) {
