@@ -1,5 +1,5 @@
-# RPS-F32-SYNTH
-Raspberry Pi Pico を利用したFMシンセ「RPS-F32」のシンセ部分  
+# RPS-WT32-SYNTH
+Raspberry Pi Pico を利用したWavetableシンセ「RPS-WT32」のシンセ部分  
 
-[![GitHub license](https://img.shields.io/badge/RPS--F32-CTRL-seagreen)](https://github.com/Saisana299/RPS-F32-CTRL)　
-[![GitHub license](https://img.shields.io/badge/RPS--F32-DISP-indianred)](https://github.com/Saisana299/RPS-F32-DISP)
+[![GitHub license](https://img.shields.io/badge/RPS--WT32-CTRL-seagreen)](https://github.com/Saisana299/RPS-WT32-CTRL)　
+[![GitHub license](https://img.shields.io/badge/RPS--WT32-DISP-indianred)](https://github.com/Saisana299/RPS-WT32-DISP)
