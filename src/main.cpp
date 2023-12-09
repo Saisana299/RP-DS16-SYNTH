@@ -106,6 +106,12 @@ void receiveEvent(int bytes) {
                 wave.setPreset(receivedData[4]);
             }
             break;
+
+        // 例: {INS_BEGIN, SYNTH_SOUND_STOP}
+        case SYNTH_SOUND_STOP:
+            lastKeyPressed = 0xff;
+            isPlaying = false;
+            break;
     }
 }
 
