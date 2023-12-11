@@ -72,9 +72,9 @@ void receiveEvent(int bytes) {
 
     switch (instruction)
     {
-        // 例: {INS_BEGIN, SYNTH_NOTE_ON, DATA_BEGIN, 0x01, 0x53}
+        // 例: {INS_BEGIN, SYNTH_NOTE_ON, DATA_BEGIN, 0x02, 0x53, 0xA5}
         case SYNTH_NOTE_ON:
-            if(bytes < 5) return;
+            if(bytes < 6) return;
             {
                 uint8_t note = receivedData[4];
                 lastKeyPressed = note; // 最後に押されたキーの情報を更新
@@ -86,9 +86,9 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_NOTE_OFF, DATA_BEGIN, 0x01, 0x53}
+        // 例: {INS_BEGIN, SYNTH_NOTE_OFF, DATA_BEGIN, 0x02, 0x53, 0x00}
         case SYNTH_NOTE_OFF:
-            if(bytes < 5) return;
+            if(bytes < 6) return;
             {
                 uint8_t note = receivedData[4];
                 if(lastKeyPressed == note) {
