@@ -5,6 +5,8 @@
 #include <synth.h>
 #include <instructionSet.h>
 
+/**TODO: ノート端のノイズ除去　適切な音量管理*/
+
 #define SYNTH_ID 1 // 1 or 2
 
 // debug 関連
