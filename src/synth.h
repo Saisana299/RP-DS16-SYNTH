@@ -1,9 +1,18 @@
 #include <Arduino.h>
+#include <limits.h>
 
 class WaveGenerator {
 private:
-    uint32_t phase;
-    uint32_t phase_delta;
+    struct Note {
+        uint32_t phase;
+        uint32_t phase_delta;
+        bool active;
+        uint8_t actnum;
+        uint8_t note;
+    };
+
+    static const int MAX_NOTES = 4; // 6音目からおかしくなる
+    Note notes[MAX_NOTES];
     float volume_gain;
     const int32_t sample_rate;
     uint8_t preset = 0x00;
@@ -130,67 +139,163 @@ int16_t sine[513] = {
         return 32 - shift;
     }
 
-public:
-    WaveGenerator(int32_t rate = 48000, float gain = 2.0f)
-        : phase(0), phase_delta(0), volume_gain(gain), sample_rate(rate) {}
+    void setFrequency(int noteIndex, float frequency) {
+        if (noteIndex >= 0 && noteIndex < MAX_NOTES) {
+            notes[noteIndex].phase_delta = frequency * (float)(1ULL << 32) / sample_rate;
+        }
+    }
 
-    void setFrequency(float frequency) {
-        phase_delta = frequency * (float)(1ULL << 32) / sample_rate;
+    float midiNoteToFrequency(uint8_t midiNote) {
+        return 440.0 * pow(2.0, (midiNote - 69) / 12.0);
+    }
+
+    int8_t getOldNote() {
+        int8_t index = -1;
+        uint8_t min = 0xff;
+        for(uint8_t i = 0; i < MAX_NOTES; i++) {
+            if(getActiveNote() == MAX_NOTES) {
+                if(notes[i].actnum < min){
+                    min = notes[i].actnum;
+                    index = i;
+                }
+            } else if(notes[i].active == false) {
+                index = i;
+            }
+        }
+        return index;
+    }
+
+    int8_t getNoteIndex(uint8_t note) {
+        int8_t index = -1;
+        for(uint8_t i = 0; i < MAX_NOTES; i++) {
+            if(notes[i].note == note) index = i;
+        }
+        return index;
+    }
+
+    void updateActNum(int noteIndex) {
+        if (noteIndex < 0 || noteIndex >= MAX_NOTES) {
+            return;
+        }
+        if (!notes[noteIndex].active) {
+            return;
+        }
+        for (int i = 0; i < MAX_NOTES; ++i) {
+            // ノートがアクティブであり、かつそのactnumが
+            // 更新されたノートのactnumより大きい場合、デクリメントする
+            if (notes[i].active && notes[i].actnum > notes[noteIndex].actnum) {
+                notes[i].actnum--;
+            }
+        }
+    }
+
+
+    bool isActiveNote(uint8_t _note) {
+        bool active = false;
+        for(Note note: notes) {
+            if(note.note == _note && note.active == true){
+                active = true;
+            }
+        }
+        return active;
+    }
+
+public:
+    WaveGenerator(int32_t rate, float gain = 1.0f): volume_gain(gain), sample_rate(rate) {
+        for (int i = 0; i < MAX_NOTES; ++i) {
+            notes[i].active = false;
+            notes[i].phase = 0;
+            notes[i].phase_delta = 0;
+            notes[i].actnum = 0;
+            notes[i].note = 0xff;
+        }
+    }
+
+    uint8_t getActiveNote() {
+        uint8_t active = 0;
+        for(Note note: notes) {
+            if(note.active == true) active++;
+        }
+        return active;
+    }
+
+    void noteOn(uint8_t note) {
+        if(isActiveNote(note)) return;
+        if(note > 127) return;
+
+        int8_t noteIndex = getOldNote();
+        if(noteIndex == -1) return;
+        setFrequency(noteIndex, midiNoteToFrequency(note));
+        notes[noteIndex].note = note;
+        notes[noteIndex].actnum = getActiveNote();
+        notes[noteIndex].active = true;
+    }
+
+    void noteOff(uint8_t note) {
+        if(!isActiveNote(note)) return;
+
+        int8_t noteIndex = getNoteIndex(note);
+        if(noteIndex == -1) return;
+        //notes[noteIndex].phase = 0;
+        notes[noteIndex].phase_delta = 0;
+        notes[noteIndex].actnum = 0;
+        notes[noteIndex].note = 0xff;
+        notes[noteIndex].active = false;
+        updateActNum(noteIndex);
+    }
+
+    void noteReset() {
+        for(Note note: notes) {
+            note.phase = 0;
+            note.phase_delta = 0;
+            note.active = false;
+            note.actnum = 0;
+            note.note = 0xff;
+        }
     }
 
     void generate(int16_t *buffer, size_t size) {
-        if(preset == 0x00){
-            const size_t sampleSize = sizeof(sine) / sizeof(sine[0]);
-            for (size_t i = 0; i < size; i++) {
-                int16_t value = sine[(phase >> bitShift(sampleSize)) % sampleSize];
-                buffer[i] = constrain(value * volume_gain, -32768, 32767);
-                phase += phase_delta;
+        memset(buffer, 0, sizeof(int16_t) * size); // バッファをクリア
+
+        for (int n = 0; n < MAX_NOTES; ++n) {
+            if (notes[n].active) {
+                size_t sampleSize;
+                int16_t* waveform;
+
+                switch(preset) {
+                    case 0x00:
+                        sampleSize = sizeof(sine) / sizeof(sine[0]);
+                        waveform = sine;
+                        break;
+                    case 0x01:
+                        sampleSize = sizeof(square) / sizeof(square[0]);
+                        waveform = square;
+                        break;
+                    case 0x02:
+                        sampleSize = sizeof(saw) / sizeof(saw[0]);
+                        waveform = saw;
+                        break;
+                    case 0x03:
+                        sampleSize = sizeof(triangle) / sizeof(triangle[0]);
+                        waveform = triangle;
+                        break;
+                }
+
+                if (waveform != nullptr) {
+                    for (size_t i = 0; i < size; i++) {
+                        // int16_tをint32_tにスケーリング
+                        int16_t value = waveform[(notes[n].phase >> bitShift(sampleSize)) % sampleSize];
+                        buffer[i] += constrain(value * (volume_gain / 4), INT16_MIN, INT16_MAX);
+                        notes[n].phase += notes[n].phase_delta;
+                    }
+                }
             }
         }
-        else if(preset == 0x01){
-            const size_t sampleSize = sizeof(square) / sizeof(square[0]);
-            for (size_t i = 0; i < size; i++) {
-                int16_t value = square[(phase >> bitShift(sampleSize)) % sampleSize];
-                buffer[i] = constrain(value * volume_gain, -32768, 32767);
-                phase += phase_delta;
-            }
-        }
-        else if(preset == 0x02){
-            const size_t sampleSize = sizeof(saw) / sizeof(saw[0]);
-            for (size_t i = 0; i < size; i++) {
-                int16_t value = saw[(phase >> bitShift(sampleSize)) % sampleSize];
-                buffer[i] = constrain(value * volume_gain, -32768, 32767);
-                phase += phase_delta;
-            }
-        }
-        else if(preset == 0x03){
-            const size_t sampleSize = sizeof(triangle) / sizeof(triangle[0]);
-            for (size_t i = 0; i < size; i++) {
-                int16_t value = triangle[(phase >> bitShift(sampleSize)) % sampleSize];
-                buffer[i] = constrain(value * volume_gain, -32768, 32767);
-                phase += phase_delta;
-            }
-        }
-    }
 
-    void applyFadeIn(int16_t *buffer, size_t size, int8_t fade_in_samples = 10) {
-        for (size_t i = 0; i < size && i < fade_in_samples; ++i) {
-            float fade_gain = (float)i / fade_in_samples;
-            buffer[i] *= fade_gain;
+        // 必要に応じてバッファの正規化
+        for (size_t i = 0; i < size; i++) {
+            buffer[i] = constrain(buffer[i], INT16_MIN, INT16_MAX);
         }
-    }
-
-    void applyFadeOut(int16_t *buffer, size_t size, int8_t fade_out_samples = 60) {
-        if (size < fade_out_samples) return;
-
-        for (size_t i = size - fade_out_samples; i < size; ++i) {
-            float fade_gain = (float)(size - i) / fade_out_samples;
-            buffer[i] *= fade_gain;
-        }
-    }
-
-    void resetPhase() {
-        phase = 0;
     }
 
     void setPreset(uint8_t id) {
