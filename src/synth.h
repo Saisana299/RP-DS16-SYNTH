@@ -120,10 +120,10 @@ public:
         if(noteIndex == -1) return;
         setFrequency(noteIndex, midiNoteToFrequency(note));
         if(notes[noteIndex].note == 0xff) {
+            notes[noteIndex].phase = 0;
             notes[noteIndex].fade_in_counter = 0;
             notes[noteIndex].fade_out_counter = -1;
         }
-        notes[noteIndex].phase = 0;
         notes[noteIndex].note = note;
         notes[noteIndex].actnum = getActiveNote();
         notes[noteIndex].active = true;
