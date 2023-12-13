@@ -119,11 +119,13 @@ public:
         int8_t noteIndex = getOldNote();
         if(noteIndex == -1) return;
         setFrequency(noteIndex, midiNoteToFrequency(note));
+        if(notes[noteIndex].note == 0xff) {
+            notes[noteIndex].fade_in_counter = 0;
+            notes[noteIndex].fade_out_counter = -1;
+        }
         notes[noteIndex].phase = 0;
         notes[noteIndex].note = note;
         notes[noteIndex].actnum = getActiveNote();
-        notes[noteIndex].fade_in_counter = 0;
-        notes[noteIndex].fade_out_counter = -1;
         notes[noteIndex].active = true;
     }
 
@@ -180,27 +182,26 @@ public:
 
                 if (waveform != nullptr) {
                     for (size_t i = 0; i < size; i++) {
+                        // フェードインとフェードアウトを適用
+                        float gain = 1.0;
+                        if (notes[n].fade_in_counter >= 0 && notes[n].fade_in_counter < 10) {
+                            gain = static_cast<float>(notes[n].fade_in_counter) / 10;
+                            notes[n].fade_in_counter++;
+                        } else if (notes[n].fade_out_counter >= 0) {
+                            gain = static_cast<float>(notes[n].fade_out_counter) / 60;
+                            if (notes[n].fade_out_counter > 0) notes[n].fade_out_counter--;
+                        }
+
                         int16_t value = waveform[(notes[n].phase >> bitShift(sampleSize)) % sampleSize];
-                        buffer[i] += value * (volume_gain / MAX_NOTES);
+                        buffer[i] += value * gain * (volume_gain / MAX_NOTES);
                         notes[n].phase += notes[n].phase_delta;
                     }
                 }
 
-                // フェードインとフェードアウトを適用
-                for (size_t i = 0; i < size; i++) {
-                    float gain = 1.0;
-                    if (notes[n].fade_in_counter >= 0 && notes[n].fade_in_counter < 10) {
-                        gain = static_cast<float>(notes[n].fade_in_counter) / 10;
-                        notes[n].fade_in_counter++;
-                    } else if (notes[n].fade_out_counter >= 0) {
-                        gain = static_cast<float>(notes[n].fade_out_counter) / 60;
-                        if (notes[n].fade_out_counter > 0) notes[n].fade_out_counter--;
-                    }
-                    buffer[i] *= gain;
-                }
-
                 if (notes[n].fade_out_counter == 0) {
+                    notes[n].fade_out_counter = -1;
                     notes[n].active = false;
+                    notes[n].note = 0xff;
                 }
             }
         }
