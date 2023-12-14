@@ -16,3 +16,4 @@
 #define SYNTH_NOTE_OFF   0xBF // ノートオフ
 #define SYNTH_SET_PRESET 0xC0 // プリセット設定
 #define SYNTH_SOUND_STOP 0xC1 // 音の再生を停止する
+#define SYNTH_SET_PAN    0xC2 // パン(C/L/R)を設定

@@ -5,8 +5,6 @@
 #include <synth.h>
 #include <instructionSet.h>
 
-/**TODO: ノート端のノイズ除去　適切な音量管理*/
-
 #define SYNTH_ID 1 // 1 or 2
 
 // debug 関連
@@ -39,6 +37,15 @@ I2S i2s(OUTPUT);
 // その他
 WaveGenerator wave(48000);
 int16_t buffer[BUFFER_SIZE];
+#define LR_PAN_C 0x00
+#define LR_PAN_L 0x01
+#define LR_PAN_R 0x02
+
+#if SYNTH_ID == 1
+    uint8_t LRMode = LR_PAN_L;
+#elif SYNTH_ID == 2
+    uint8_t LRMode = LR_PAN_R;
+#endif
 
 void loop1();
 
@@ -94,6 +101,20 @@ void receiveEvent(int bytes) {
         case SYNTH_SOUND_STOP:
             wave.noteReset();
             break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_PAN, DATA_BEGIN, 0x01, 0x02}
+        case SYNTH_SET_PAN:
+            if(bytes < 5) return;
+            if(receivedData[4] == 0x00){
+                LRMode = LR_PAN_C;
+            }
+            else if(receivedData[4] == 0x01){
+                LRMode = LR_PAN_L;
+            }
+            else if(receivedData[4] == 0x02){
+                LRMode = LR_PAN_R;
+            }
+            break;
     }
 }
 
@@ -129,8 +150,18 @@ void loop1() {
             }
 
             while (buffer_index < BUFFER_SIZE) {
-                i2s.write(buffer[buffer_index]);  // L
-                i2s.write(buffer[buffer_index]);  // R
+                if(LRMode == LR_PAN_C){
+                    i2s.write(buffer[buffer_index]);  // L
+                    i2s.write(buffer[buffer_index]);  // R
+                }
+                else if(LRMode == LR_PAN_L){
+                    i2s.write(buffer[buffer_index]);  // L
+                    i2s.write(static_cast<int16_t>(0));  // R
+                }
+                else if(LRMode == LR_PAN_R){
+                    i2s.write(static_cast<int16_t>(0));  // L
+                    i2s.write(buffer[buffer_index]);  // R
+                }
                 buffer_index++;
             }
 
