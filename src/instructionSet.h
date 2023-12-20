@@ -1,5 +1,4 @@
 //// 共通システムコード (予約済み) 127~
-
 #define INS_BEGIN     0x7F // 命令送信ビット
 #define DATA_BEGIN    0x80 // データ送信ビット
 #define DATA_SEPARATE 0x81 // データ区切り
@@ -11,9 +10,13 @@
 ////
 //// データサイズは255が最大だが区切りを利用するとさらに多くのデータを送れます。
 //// 例：{..., 0x80, 0xff, ..., 0x84, 0xff, ...}
-
 #define SYNTH_NOTE_ON    0xBE // ノートオン
 #define SYNTH_NOTE_OFF   0xBF // ノートオフ
 #define SYNTH_SET_PRESET 0xC0 // プリセット設定
 #define SYNTH_SOUND_STOP 0xC1 // 音の再生を停止する
 #define SYNTH_SET_PAN    0xC2 // パン(C/L/R)を設定
+
+//// 共通シンセパン状態コード
+#define LR_PAN_C 0x00
+#define LR_PAN_L 0x01
+#define LR_PAN_R 0x02

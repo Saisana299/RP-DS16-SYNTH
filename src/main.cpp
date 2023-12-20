@@ -37,9 +37,6 @@ I2S i2s(OUTPUT);
 // その他
 WaveGenerator wave(48000);
 int16_t buffer[BUFFER_SIZE];
-#define LR_PAN_C 0x00
-#define LR_PAN_L 0x01
-#define LR_PAN_R 0x02
 
 #if SYNTH_ID == 1
     uint8_t LRMode = LR_PAN_L;
