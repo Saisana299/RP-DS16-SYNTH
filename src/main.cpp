@@ -73,7 +73,8 @@ void receiveEvent(int bytes) {
             if(bytes < 6) return;
             {
                 uint8_t note = receivedData[4];
-                wave.noteOn(note);
+                uint8_t velocity = receivedData[5];
+                wave.noteOn(note, velocity);
             }
             break;
 
