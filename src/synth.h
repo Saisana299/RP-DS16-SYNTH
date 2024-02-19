@@ -17,10 +17,16 @@ private:
 
     static const int MAX_NOTES = 4; // 6音目からおかしくなる
     Note notes[MAX_NOTES];
+
     float volume_gain = 1.0f;
     const int32_t sample_rate;
-    uint8_t preset = 0x00;
 
+    // プリセットとサンプル定義
+    uint8_t preset = 0x00;
+    size_t sampleSize = sizeof(sine) / sizeof(sine[0]);
+    int16_t* waveform = sine;
+
+    // ビットシフト
     uint8_t bitShift(size_t tableSize) {
         uint8_t shift = 0;
         while (tableSize > 1) {
@@ -29,6 +35,9 @@ private:
         }
         return 32 - shift;
     }
+
+    // 初期化
+    uint8_t bit_shift = bitShift(sampleSize);
 
     void setFrequency(int noteIndex, float frequency) {
         if (noteIndex >= 0 && noteIndex < MAX_NOTES) {
@@ -158,28 +167,6 @@ public:
 
         for (uint8_t n = 0; n < MAX_NOTES; ++n) {
             if (notes[n].active) {
-                size_t sampleSize;
-                int16_t* waveform;
-
-                switch(preset) {
-                    case 0x00:
-                        sampleSize = sizeof(sine) / sizeof(sine[0]);
-                        waveform = sine;
-                        break;
-                    case 0x01:
-                        sampleSize = sizeof(triangle) / sizeof(triangle[0]);
-                        waveform = triangle;
-                        break;
-                    case 0x02:
-                        sampleSize = sizeof(saw) / sizeof(saw[0]);
-                        waveform = saw;
-                        break;
-                    case 0x03:
-                        sampleSize = sizeof(square) / sizeof(square[0]);
-                        waveform = square;
-                        break;
-                }
-
                 if (waveform != nullptr) {
                     for (size_t i = 0; i < size; i++) {
                         // フェードインとフェードアウトを適用
@@ -192,7 +179,7 @@ public:
                             if (notes[n].fade_out_counter > 0) notes[n].fade_out_counter--;
                         }
 
-                        int16_t value = waveform[(notes[n].phase >> bitShift(sampleSize)) % sampleSize];
+                        int16_t value = waveform[(notes[n].phase >> bit_shift) % sampleSize];
                         buffer[i] += value * fade_gain * notes[n].gain;
                         notes[n].phase += notes[n].phase_delta;
                     }
@@ -215,5 +202,26 @@ public:
 
     void setPreset(uint8_t id) {
         preset = id;
+
+        switch(preset) {
+            case 0x00:
+                sampleSize = sizeof(sine) / sizeof(sine[0]);
+                waveform = sine;
+                break;
+            case 0x01:
+                sampleSize = sizeof(triangle) / sizeof(triangle[0]);
+                waveform = triangle;
+                break;
+            case 0x02:
+                sampleSize = sizeof(saw) / sizeof(saw[0]);
+                waveform = saw;
+                break;
+            case 0x03:
+                sampleSize = sizeof(square) / sizeof(square[0]);
+                waveform = square;
+                break;
+        }
+
+        bit_shift = bitShift(sampleSize);
     }
 };
