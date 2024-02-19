@@ -10,11 +10,13 @@
 ////
 //// データサイズは255が最大だが区切りを利用するとさらに多くのデータを送れます。
 //// 例：{..., 0x80, 0xff, ..., 0x84, 0xff, ...}
-#define SYNTH_NOTE_ON    0xBE // ノートオン
-#define SYNTH_NOTE_OFF   0xBF // ノートオフ
-#define SYNTH_SET_PRESET 0xC0 // プリセット設定
-#define SYNTH_SOUND_STOP 0xC1 // 音の再生を停止する
-#define SYNTH_SET_PAN    0xC2 // パン(C/L/R)を設定
+#define SYNTH_NOTE_ON     0xBE // ノートオン
+#define SYNTH_NOTE_OFF    0xBF // ノートオフ
+#define SYNTH_SET_SHAPE   0xC0 // 基本波形設定
+#define SYNTH_SOUND_STOP  0xC1 // 音の再生を停止する
+#define SYNTH_SET_PAN     0xC2 // パン(C/L/R)を設定
+#define SYNTH_SET_ATTACK  0xC3 // アタックを設定
+#define SYNTH_SET_RELEASE 0xC4 // リリースを設定
 
 //// 共通シンセパン状態コード
 #define LR_PAN_C 0x00

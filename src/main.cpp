@@ -85,11 +85,11 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_PRESET, DATA_BEGIN, 0x01, 0x02}
-        case SYNTH_SET_PRESET:
+        // 例: {INS_BEGIN, SYNTH_SET_SHAPE, DATA_BEGIN, 0x01, 0x02}
+        case SYNTH_SET_SHAPE:
             if(bytes < 5) return;
             {
-                wave.setPreset(receivedData[4]);
+                wave.setShape(receivedData[4]);
             }
             break;
 
@@ -110,6 +110,18 @@ void receiveEvent(int bytes) {
             else if(receivedData[4] == 0x02){
                 LRMode = LR_PAN_R;
             }
+            break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_ATTACK, DATA_BEGIN, 0x01, 0x30}
+        case SYNTH_SET_ATTACK:
+            if(bytes < 5) return;
+            wave.setAttack(255);
+            break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_RELEASE, DATA_BEGIN, 0x01, 0x30}
+        case SYNTH_SET_RELEASE:
+            if(bytes < 5) return;
+            wave.setRelease(60);
             break;
     }
 }

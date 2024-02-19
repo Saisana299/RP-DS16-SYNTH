@@ -11,18 +11,24 @@ private:
         uint8_t actnum;
         uint8_t note;
         float gain;
-        int16_t fade_in_counter;
-        int16_t fade_out_counter;
+        int16_t attack_counter;
+        int16_t release_counter;
     };
 
-    static const int MAX_NOTES = 4; // 6音目からおかしくなる
+    static const int MAX_NOTES = 4;
     Note notes[MAX_NOTES];
 
     float volume_gain = 1.0f;
     const int32_t sample_rate;
 
-    // プリセットとサンプル定義
-    uint8_t preset = 0x00;
+    // フェードの定義
+    int16_t attack_time = 10;
+    int16_t decay_time = -1; //todo
+    int16_t sustain_level = -1; //todo
+    int16_t release_time = 60;
+
+    // 基本波形とサンプル定義
+    uint8_t shape = 0x00;
     size_t sampleSize = sizeof(sine) / sizeof(sine[0]);
     int16_t* waveform = sine;
 
@@ -127,8 +133,8 @@ public:
         setFrequency(noteIndex, midiNoteToFrequency(note));
         if(notes[noteIndex].note == 0xff) {
             notes[noteIndex].phase = 0;
-            notes[noteIndex].fade_in_counter = 0;
-            notes[noteIndex].fade_out_counter = -1;
+            notes[noteIndex].attack_counter = 0;
+            notes[noteIndex].release_counter = -1;
         }
 
         notes[noteIndex].note = note;
@@ -142,10 +148,9 @@ public:
 
         int8_t noteIndex = getNoteIndex(note);
         if(noteIndex == -1) return;
-        notes[noteIndex].fade_out_counter = 60;
-        notes[noteIndex].fade_in_counter = -1;
+        notes[noteIndex].release_counter = release_time;
+        notes[noteIndex].attack_counter = -1;
         notes[noteIndex].actnum = 0;
-        //notes[noteIndex].active = false;
         updateActNum(noteIndex);
     }
 
@@ -157,8 +162,8 @@ public:
             notes[i].actnum = 0;
             notes[i].note = 0xff;
             notes[i].gain = 0.0f;
-            notes[i].fade_in_counter = -1;
-            notes[i].fade_out_counter = -1;
+            notes[i].attack_counter = -1;
+            notes[i].release_counter = -1;
         }
     }
 
@@ -169,24 +174,24 @@ public:
             if (notes[n].active) {
                 if (waveform != nullptr) {
                     for (size_t i = 0; i < size; i++) {
-                        // フェードインとフェードアウトを適用
-                        float fade_gain = 1.0f;
-                        if (notes[n].fade_in_counter >= 0 && notes[n].fade_in_counter < 10) {
-                            fade_gain = static_cast<float>(notes[n].fade_in_counter) / 10.0f;
-                            notes[n].fade_in_counter++;
-                        } else if (notes[n].fade_out_counter >= 0) {
-                            fade_gain = static_cast<float>(notes[n].fade_out_counter) / 60.0f;
-                            if (notes[n].fade_out_counter > 0) notes[n].fade_out_counter--;
+                        // アッタックとリリースを適用
+                        float adsr_gain = 1.0f;
+                        if (notes[n].attack_counter >= 0 && notes[n].attack_counter < attack_time) {
+                            adsr_gain = static_cast<float>(notes[n].attack_counter) / attack_time;
+                            notes[n].attack_counter++;
+                        } else if (notes[n].release_counter >= 0) {
+                            adsr_gain = static_cast<float>(notes[n].release_counter) / release_time;
+                            if (notes[n].release_counter > 0) notes[n].release_counter--;
                         }
 
                         int16_t value = waveform[(notes[n].phase >> bit_shift) % sampleSize];
-                        buffer[i] += value * fade_gain * notes[n].gain;
+                        buffer[i] += value * adsr_gain * notes[n].gain;
                         notes[n].phase += notes[n].phase_delta;
                     }
                 }
 
-                if (notes[n].fade_out_counter == 0) {
-                    notes[n].fade_out_counter = -1;
+                if (notes[n].release_counter == 0) {
+                    notes[n].release_counter = -1;
                     notes[n].active = false;
                     notes[n].note = 0xff;
                     notes[n].gain = 0.0f;
@@ -200,10 +205,10 @@ public:
         }
     }
 
-    void setPreset(uint8_t id) {
-        preset = id;
+    void setShape(uint8_t id) {
+        shape = id;
 
-        switch(preset) {
+        switch(shape) {
             case 0x00:
                 sampleSize = sizeof(sine) / sizeof(sine[0]);
                 waveform = sine;
@@ -223,5 +228,13 @@ public:
         }
 
         bit_shift = bitShift(sampleSize);
+    }
+
+    void setAttack(int16_t attack) {
+        attack_time = attack;
+    }
+
+    void setRelease(int16_t release) {
+        release_time = release;
     }
 };
