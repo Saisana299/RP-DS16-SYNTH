@@ -44,8 +44,6 @@ int16_t buffer[BUFFER_SIZE];
     uint8_t LRMode = LR_PAN_R;
 #endif
 
-void loop1();
-
 void receiveEvent(int bytes) {
     // 2バイト以上のみ受け付ける
     if(bytes < 2) return;
@@ -130,41 +128,35 @@ void setup() {
     i2s.begin(SAMPLE_RATE);
     
     pinMode(LED_BUILTIN, OUTPUT);
-
-    multicore_launch_core1(loop1);
 }
 
-void loop() {} // 使用しない
+void loop() {
+    if (wave.getActiveNote() != 0) {
+        static size_t buffer_index = 0;
 
-void loop1() {
-    while(1) {
-        if (wave.getActiveNote() != 0) {
-            static size_t buffer_index = 0;
-
-            digitalWrite(LED_BUILTIN, HIGH);
-            if (buffer_index == BUFFER_SIZE) {
-                wave.generate(buffer, BUFFER_SIZE);
-                buffer_index = 0;
-            }
-
-            while (buffer_index < BUFFER_SIZE) {
-                if(LRMode == LR_PAN_C){
-                    i2s.write(buffer[buffer_index]);  // L
-                    i2s.write(buffer[buffer_index]);  // R
-                }
-                else if(LRMode == LR_PAN_L){
-                    i2s.write(buffer[buffer_index]);  // L
-                    i2s.write(static_cast<int16_t>(0));  // R
-                }
-                else if(LRMode == LR_PAN_R){
-                    i2s.write(static_cast<int16_t>(0));  // L
-                    i2s.write(buffer[buffer_index]);  // R
-                }
-                buffer_index++;
-            }
-
-        } else {
-            digitalWrite(LED_BUILTIN, LOW);
+        digitalWrite(LED_BUILTIN, HIGH);
+        if (buffer_index == BUFFER_SIZE) {
+            wave.generate(buffer, BUFFER_SIZE);
+            buffer_index = 0;
         }
+
+        while (buffer_index < BUFFER_SIZE) {
+            if(LRMode == LR_PAN_C){
+                i2s.write(buffer[buffer_index]);  // L
+                i2s.write(buffer[buffer_index]);  // R
+            }
+            else if(LRMode == LR_PAN_L){
+                i2s.write(buffer[buffer_index]);  // L
+                i2s.write(static_cast<int16_t>(0));  // R
+            }
+            else if(LRMode == LR_PAN_R){
+                i2s.write(static_cast<int16_t>(0));  // L
+                i2s.write(buffer[buffer_index]);  // R
+            }
+            buffer_index++;
+        }
+
+    } else {
+        digitalWrite(LED_BUILTIN, LOW);
     }
 }
