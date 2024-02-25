@@ -21,10 +21,10 @@ private:
     float volume_gain = 1.0f;
     const int32_t sample_rate;
 
-    // フェードの定義
+    // ADSRの定義
     int16_t attack_time = 10;
-    int16_t decay_time = -1; //todo
-    int16_t sustain_level = -1; //todo
+    int16_t decay_time = 0;
+    int16_t sustain_level = 1000;
     int16_t release_time = 60;
 
     // 基本波形とサンプル定義
@@ -174,7 +174,7 @@ public:
             if (notes[n].active) {
                 if (waveform != nullptr) {
                     for (size_t i = 0; i < size; i++) {
-                        // アッタックとリリースを適用
+                        // ADSRを適用
                         float adsr_gain = 1.0f;
                         if (notes[n].attack_counter >= 0 && notes[n].attack_counter < attack_time) {
                             adsr_gain = static_cast<float>(notes[n].attack_counter) / attack_time;

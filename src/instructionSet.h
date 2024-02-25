@@ -17,6 +17,8 @@
 #define SYNTH_SET_PAN     0xC2 // パン(C/L/R)を設定
 #define SYNTH_SET_ATTACK  0xC3 // アタックを設定
 #define SYNTH_SET_RELEASE 0xC4 // リリースを設定
+#define SYNTH_SET_DECAY   0xC5 // ディケイを設定
+#define SYNTH_SET_SUSTAIN 0xC6 // サステインを設定
 
 //// 共通シンセパン状態コード
 #define LR_PAN_C 0x00

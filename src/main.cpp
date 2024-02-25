@@ -37,12 +37,7 @@ I2S i2s(OUTPUT);
 // その他
 WaveGenerator wave(48000);
 int16_t buffer[BUFFER_SIZE];
-
-#if SYNTH_ID == 1
-    uint8_t LRMode = LR_PAN_L;
-#elif SYNTH_ID == 2
-    uint8_t LRMode = LR_PAN_R;
-#endif
+uint8_t LRMode = LR_PAN_C;
 
 void receiveEvent(int bytes) {
     // 2バイト以上のみ受け付ける
@@ -112,16 +107,32 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_ATTACK, DATA_BEGIN, 0x01, 0x30}
+        // 例: {INS_BEGIN, SYNTH_SET_ATTACK, DATA_BEGIN, 0x05, 0x00, 0x30, 0x00, 0x00, 0x00}
         case SYNTH_SET_ATTACK:
-            if(bytes < 5) return;
-            wave.setAttack(255);
+            if(bytes < 9) return;
+            {
+                int16_t attack = 0;
+                attack += receivedData[4] * 1000;
+                attack += receivedData[5];
+                attack += receivedData[6];
+                attack += receivedData[7];
+                attack += receivedData[8];
+                wave.setAttack(attack);
+            }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_RELEASE, DATA_BEGIN, 0x01, 0x30}
+        // 例: {INS_BEGIN, SYNTH_SET_RELEASE, DATA_BEGIN, 0x05, 0x30, 0x00, 0x00, 0x00, 0x00}
         case SYNTH_SET_RELEASE:
-            if(bytes < 5) return;
-            wave.setRelease(60);
+            if(bytes < 9) return;
+            {
+                int16_t release = 0;
+                release += receivedData[4] * 1000;
+                release += receivedData[5];
+                release += receivedData[6];
+                release += receivedData[7];
+                release += receivedData[8];
+                wave.setRelease(release);
+            }
             break;
     }
 }
