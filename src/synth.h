@@ -4,7 +4,6 @@
 
 // todo
 // 二音を高速で連続発声させるとattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
-// 爆音にならない強制リリース処理
 
 class WaveGenerator {
 private:
@@ -18,6 +17,7 @@ private:
         float adsr_gain;
         int32_t attack_counter;
         int32_t release_counter;
+        int32_t force_release_counter;
     };
 
     struct NoteCache {
@@ -39,6 +39,8 @@ private:
     int32_t decay_sample = static_cast<int32_t>((0.0 / 1000.0) * sample_rate);
     int16_t sustain_level = 1000;
     int32_t release_sample = static_cast<int32_t>((1.0 / 1000.0) * sample_rate);
+
+    int32_t force_release_sample = static_cast<int32_t>((10.0 / 1000.0) * sample_rate);
 
     // 基本波形とサンプル定義
     uint8_t shape = 0x00;
@@ -155,7 +157,7 @@ public:
             } else {
                 currentAdsrGain = 1.0f;
             }
-            notes[noteIndex].release_counter = static_cast<int32_t>(currentAdsrGain * release_sample);
+            notes[noteIndex].force_release_counter = static_cast<int32_t>(currentAdsrGain * force_release_sample);
 
             // Cacheに保存
             cache.processed = false;
@@ -181,6 +183,7 @@ public:
         }
 
         notes[noteIndex].release_counter = -1;
+        notes[noteIndex].force_release_counter = -1;
         notes[noteIndex].note = note;
         notes[noteIndex].gain = (volume_gain / MAX_NOTES) * ((float)velocity / 127.0f);
         notes[noteIndex].actnum = getActiveNote();
@@ -234,6 +237,7 @@ public:
             notes[i].adsr_gain = 0.0f;
             notes[i].attack_counter = -1;
             notes[i].release_counter = -1;
+            notes[i].force_release_counter = -1;
         }
     }
 
@@ -257,6 +261,11 @@ public:
                             adsr_gain = static_cast<float>(notes[n].release_counter) / release_sample;
                             if (notes[n].release_counter > 0) notes[n].release_counter--;
                         }
+                        // 強制リリース
+                        else if (notes[n].force_release_counter >= 0) {
+                            adsr_gain = static_cast<float>(notes[n].force_release_counter) / force_release_sample;
+                            if (notes[n].force_release_counter > 0) notes[n].force_release_counter--;
+                        }
                         
                         notes[n].adsr_gain = adsr_gain;
 
@@ -266,7 +275,7 @@ public:
                     }
                 }
 
-                if (notes[n].release_counter == 0) {
+                if (notes[n].release_counter == 0 || notes[n].force_release_counter == 0) {
                     notes[n].release_counter = -1;
                     notes[n].active = false;
                     notes[n].note = 0xff;
