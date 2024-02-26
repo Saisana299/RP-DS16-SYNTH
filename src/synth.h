@@ -4,7 +4,7 @@
 
 // todo
 // 二音を高速で連続発声させるとattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
-// 5音目に発生するノイズ対処(Releaseを待ってから処理する)
+// 爆音にならない強制リリース処理
 
 class WaveGenerator {
 private:
@@ -20,8 +20,16 @@ private:
         int32_t release_counter;
     };
 
+    struct NoteCache {
+        bool processed;
+        uint8_t actnum;
+        uint8_t note;
+        uint8_t velocity;
+    };
+
     static const int MAX_NOTES = 4;
     Note notes[MAX_NOTES];
+    NoteCache cache;
 
     float volume_gain = 1.0f;
     const int32_t sample_rate;
@@ -138,18 +146,23 @@ public:
         int8_t noteIndex = getOldNote();
         if(noteIndex == -1) return;
 
-        bool resetAdsr = false;
         if(notes[noteIndex].active) {
-            resetAdsr = true;
-            if (notes[noteIndex].attack_counter < attack_sample) {
-                // アタックフェーズ中にノートオフが発生した場合
-                // ADSRゲインを基にリリースカウンターを計算し、リリースフェーズを短縮
-                float remainingRelease = 1.0 - notes[noteIndex].adsr_gain;
-                notes[noteIndex].release_counter = static_cast<int32_t>(remainingRelease * release_sample);
+
+            // 強制停止専用release
+            float currentAdsrGain;
+            if (notes[noteIndex].attack_counter >= 0 && notes[noteIndex].attack_counter < attack_sample) {
+                currentAdsrGain = notes[noteIndex].adsr_gain;
             } else {
-                // アタックフェーズが完了している場合は、通常のリリースサンプル値を使用
-                notes[noteIndex].release_counter = release_sample;
+                currentAdsrGain = 1.0f;
             }
+            notes[noteIndex].release_counter = static_cast<int32_t>(currentAdsrGain * release_sample);
+
+            // Cacheに保存
+            cache.processed = false;
+            cache.note = note;
+            cache.actnum = notes[noteIndex].actnum;
+            cache.velocity = velocity;
+            return;
         }
 
         setFrequency(noteIndex, midiNoteToFrequency(note));
@@ -161,7 +174,6 @@ public:
         } else {
             currentAdsrGain = 0.0f;
         }
-        if(resetAdsr) currentAdsrGain = 0.0f;
         notes[noteIndex].attack_counter = static_cast<int32_t>(currentAdsrGain * attack_sample);
 
         if(notes[noteIndex].note == 0xff) {
@@ -176,6 +188,12 @@ public:
     }
 
     void noteOff(uint8_t note) {
+        // cache にある場合は消す
+        if(cache.note == note && !cache.processed) {
+            cache.processed = true;
+            return;
+        }
+
         if(!isActiveNote(note)) return;
 
         int8_t noteIndex = getNoteIndex(note);
@@ -228,13 +246,18 @@ public:
                     for (size_t i = 0; i < size; i++) {
                         // ADSRを適用
                         float adsr_gain = 1.0f;
+                        
+                        // アタック
                         if (notes[n].attack_counter >= 0 && notes[n].attack_counter < attack_sample) {
                             adsr_gain = static_cast<float>(notes[n].attack_counter) / attack_sample;
                             notes[n].attack_counter++;
-                        } else if (notes[n].release_counter >= 0) {
+                        }
+                        // リリース
+                        else if (notes[n].release_counter >= 0) {
                             adsr_gain = static_cast<float>(notes[n].release_counter) / release_sample;
                             if (notes[n].release_counter > 0) notes[n].release_counter--;
                         }
+                        
                         notes[n].adsr_gain = adsr_gain;
 
                         int16_t value = waveform[(notes[n].phase >> bit_shift) % sampleSize];
@@ -248,6 +271,11 @@ public:
                     notes[n].active = false;
                     notes[n].note = 0xff;
                     notes[n].gain = 0.0f;
+
+                    if(notes[n].actnum == cache.actnum && !cache.processed) {
+                        cache.processed = true;
+                        noteOn(cache.note, cache.velocity);
+                    }
                 }
             }
         }

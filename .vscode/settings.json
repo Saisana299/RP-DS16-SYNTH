@@ -12,6 +12,7 @@
         "utility": "cpp",
         "cmath": "cpp",
         "initializer_list": "cpp",
-        "memory": "cpp"
+        "memory": "cpp",
+        "algorithm": "cpp"
     }
 }
