@@ -2,8 +2,9 @@
 #include <limits.h>
 #include <shape.h>
 
-//todo
-//二音同時に出すときattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
+// todo
+// 二音を高速で連続発声させるとattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
+// 5音目に発生するノイズ対処(Releaseを待ってから処理する)
 
 class WaveGenerator {
 private:
@@ -136,10 +137,22 @@ public:
 
         int8_t noteIndex = getOldNote();
         if(noteIndex == -1) return;
-        setFrequency(noteIndex, midiNoteToFrequency(note));
-        if(notes[noteIndex].note == 0xff) {
-            notes[noteIndex].phase = 0;
+
+        bool resetAdsr = false;
+        if(notes[noteIndex].active) {
+            resetAdsr = true;
+            if (notes[noteIndex].attack_counter < attack_sample) {
+                // アタックフェーズ中にノートオフが発生した場合
+                // ADSRゲインを基にリリースカウンターを計算し、リリースフェーズを短縮
+                float remainingRelease = 1.0 - notes[noteIndex].adsr_gain;
+                notes[noteIndex].release_counter = static_cast<int32_t>(remainingRelease * release_sample);
+            } else {
+                // アタックフェーズが完了している場合は、通常のリリースサンプル値を使用
+                notes[noteIndex].release_counter = release_sample;
+            }
         }
+
+        setFrequency(noteIndex, midiNoteToFrequency(note));
 
         // リリース中のアタックは現在の位置から行う
         float currentAdsrGain;
@@ -148,7 +161,12 @@ public:
         } else {
             currentAdsrGain = 0.0f;
         }
+        if(resetAdsr) currentAdsrGain = 0.0f;
         notes[noteIndex].attack_counter = static_cast<int32_t>(currentAdsrGain * attack_sample);
+
+        if(notes[noteIndex].note == 0xff) {
+            notes[noteIndex].phase = 0;
+        }
 
         notes[noteIndex].release_counter = -1;
         notes[noteIndex].note = note;
