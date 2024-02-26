@@ -2,6 +2,9 @@
 #include <limits.h>
 #include <shape.h>
 
+//todo
+//二音同時に出すときattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
+
 class WaveGenerator {
 private:
     struct Note {
@@ -11,8 +14,9 @@ private:
         uint8_t actnum;
         uint8_t note;
         float gain;
-        int16_t attack_counter;
-        int16_t release_counter;
+        float adsr_gain;
+        int32_t attack_counter;
+        int32_t release_counter;
     };
 
     static const int MAX_NOTES = 4;
@@ -22,10 +26,10 @@ private:
     const int32_t sample_rate;
 
     // ADSRの定義
-    int16_t attack_time = 10;
-    int16_t decay_time = 0;
+    int32_t attack_sample = static_cast<int32_t>((1.0 / 1000.0) * sample_rate);
+    int32_t decay_sample = static_cast<int32_t>((0.0 / 1000.0) * sample_rate);
     int16_t sustain_level = 1000;
-    int16_t release_time = 60;
+    int32_t release_sample = static_cast<int32_t>((1.0 / 1000.0) * sample_rate);
 
     // 基本波形とサンプル定義
     uint8_t shape = 0x00;
@@ -120,12 +124,14 @@ public:
     }
 
     void noteOn(uint8_t note, uint8_t velocity) {
-        if(isActiveNote(note)) return;
         if(note > 127) return;
         if(velocity > 127) return;
         if(velocity == 0) {
             noteOff(note);
             return;
+        }
+        if(isActiveNote(note)) {
+            noteStop(note);
         }
 
         int8_t noteIndex = getOldNote();
@@ -133,10 +139,18 @@ public:
         setFrequency(noteIndex, midiNoteToFrequency(note));
         if(notes[noteIndex].note == 0xff) {
             notes[noteIndex].phase = 0;
-            notes[noteIndex].attack_counter = 0;
-            notes[noteIndex].release_counter = -1;
         }
 
+        // リリース中のアタックは現在の位置から行う
+        float currentAdsrGain;
+        if(notes[noteIndex].release_counter >= 0) {
+            currentAdsrGain = notes[noteIndex].adsr_gain;
+        } else {
+            currentAdsrGain = 0.0f;
+        }
+        notes[noteIndex].attack_counter = static_cast<int32_t>(currentAdsrGain * attack_sample);
+
+        notes[noteIndex].release_counter = -1;
         notes[noteIndex].note = note;
         notes[noteIndex].gain = (volume_gain / MAX_NOTES) * ((float)velocity / 127.0f);
         notes[noteIndex].actnum = getActiveNote();
@@ -148,10 +162,29 @@ public:
 
         int8_t noteIndex = getNoteIndex(note);
         if(noteIndex == -1) return;
-        notes[noteIndex].release_counter = release_time;
+
+        // アタック中のリリースはnoteOff時のgainから行う
+        float currentAdsrGain;
+        if (notes[noteIndex].attack_counter >= 0 && notes[noteIndex].attack_counter < attack_sample) {
+            currentAdsrGain = notes[noteIndex].adsr_gain;
+        } else {
+            currentAdsrGain = 1.0f;
+        }
+        // リリースカウンターを現在のADSRゲインに基づいて調整
+        notes[noteIndex].release_counter = static_cast<int32_t>(currentAdsrGain * release_sample);
+
         notes[noteIndex].attack_counter = -1;
         notes[noteIndex].actnum = 0;
         updateActNum(noteIndex);
+    }
+
+    void noteStop(uint8_t note) {
+        if(!isActiveNote(note)) return;
+
+        int8_t noteIndex = getNoteIndex(note);
+        if(noteIndex == -1) return;
+
+        notes[noteIndex].active = false;
     }
 
     void noteReset() {
@@ -162,6 +195,7 @@ public:
             notes[i].actnum = 0;
             notes[i].note = 0xff;
             notes[i].gain = 0.0f;
+            notes[i].adsr_gain = 0.0f;
             notes[i].attack_counter = -1;
             notes[i].release_counter = -1;
         }
@@ -176,13 +210,14 @@ public:
                     for (size_t i = 0; i < size; i++) {
                         // ADSRを適用
                         float adsr_gain = 1.0f;
-                        if (notes[n].attack_counter >= 0 && notes[n].attack_counter < attack_time) {
-                            adsr_gain = static_cast<float>(notes[n].attack_counter) / attack_time;
+                        if (notes[n].attack_counter >= 0 && notes[n].attack_counter < attack_sample) {
+                            adsr_gain = static_cast<float>(notes[n].attack_counter) / attack_sample;
                             notes[n].attack_counter++;
                         } else if (notes[n].release_counter >= 0) {
-                            adsr_gain = static_cast<float>(notes[n].release_counter) / release_time;
+                            adsr_gain = static_cast<float>(notes[n].release_counter) / release_sample;
                             if (notes[n].release_counter > 0) notes[n].release_counter--;
                         }
+                        notes[n].adsr_gain = adsr_gain;
 
                         int16_t value = waveform[(notes[n].phase >> bit_shift) % sampleSize];
                         buffer[i] += value * adsr_gain * notes[n].gain;
@@ -231,10 +266,10 @@ public:
     }
 
     void setAttack(int16_t attack) {
-        attack_time = attack;
+        attack_sample = static_cast<int32_t>((attack / 1000.0) * sample_rate);
     }
 
     void setRelease(int16_t release) {
-        release_time = release;
+        release_sample = static_cast<int32_t>((release / 1000.0) * sample_rate);
     }
 };
