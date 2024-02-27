@@ -5,7 +5,7 @@
 #include <synth.h>
 #include <instructionSet.h>
 
-#define SYNTH_ID 2 // 1 or 2
+#define SYNTH_ID 1 // 1 or 2
 
 // debug 関連
 #define DEBUG_MODE 1 //0 or 1
@@ -38,6 +38,7 @@ I2S i2s(OUTPUT);
 WaveGenerator wave(48000);
 int16_t buffer[BUFFER_SIZE];
 uint8_t LRMode = LR_PAN_C;
+bool isLed = false;
 
 void receiveEvent(int bytes) {
     // 2バイト以上のみ受け付ける
@@ -109,29 +110,38 @@ void receiveEvent(int bytes) {
 
         // 例: {INS_BEGIN, SYNTH_SET_ATTACK, DATA_BEGIN, 0x05, 0x00, 0x30, 0x00, 0x00, 0x00}
         case SYNTH_SET_ATTACK:
-            if(bytes < 9) return;
-            {
-                int16_t attack = 0;
-                attack += receivedData[4] * 1000;
-                attack += receivedData[5];
-                attack += receivedData[6];
-                attack += receivedData[7];
-                attack += receivedData[8];
-                wave.setAttack(attack);
-            }
-            break;
-
-        // 例: {INS_BEGIN, SYNTH_SET_RELEASE, DATA_BEGIN, 0x05, 0x30, 0x00, 0x00, 0x00, 0x00}
+        case SYNTH_SET_DECAY:
         case SYNTH_SET_RELEASE:
             if(bytes < 9) return;
             {
-                int16_t release = 0;
-                release += receivedData[4] * 1000;
-                release += receivedData[5];
-                release += receivedData[6];
-                release += receivedData[7];
-                release += receivedData[8];
-                wave.setRelease(release);
+                int16_t data = 0;
+                data += receivedData[4] * 1000;
+                data += receivedData[5];
+                data += receivedData[6];
+                data += receivedData[7];
+                data += receivedData[8];
+                if(receivedData[1] == SYNTH_SET_ATTACK) {
+                    wave.setAttack(data);
+                }
+                else if(receivedData[1] == SYNTH_SET_DECAY) {
+                    wave.setDecay(data);
+                }
+                else if(receivedData[1] == SYNTH_SET_RELEASE) {
+                    wave.setRelease(data);
+                }
+            }
+            break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_SUSTAIN, DATA_BEGIN, 0x04, 0x30, 0x00, 0x00, 0x00}
+        case SYNTH_SET_SUSTAIN:
+            if(bytes < 8) return;
+            {
+                int16_t sustain = 0;
+                sustain += receivedData[4];
+                sustain += receivedData[5];
+                sustain += receivedData[6];
+                sustain += receivedData[7];
+                wave.setSustain(sustain);
             }
             break;
     }
@@ -154,32 +164,44 @@ void setup() {
 }
 
 void loop() {
-    if (wave.getActiveNote() != 0) {
-        static size_t buffer_index = 0;
+    while (1) {
+        if (wave.getActiveNote() != 0) {
+            static size_t buffer_index = 0;
 
-        digitalWrite(LED_BUILTIN, HIGH);
-        if (buffer_index == BUFFER_SIZE) {
-            wave.generate(buffer, BUFFER_SIZE);
-            buffer_index = 0;
+            isLed = true;
+            if (buffer_index == BUFFER_SIZE) {
+                wave.generate(buffer, BUFFER_SIZE);
+                buffer_index = 0;
+            }
+
+            while (buffer_index < BUFFER_SIZE) {
+                if(LRMode == LR_PAN_C){
+                    i2s.write(buffer[buffer_index]);  // L
+                    i2s.write(buffer[buffer_index]);  // R
+                }
+                else if(LRMode == LR_PAN_L){
+                    i2s.write(buffer[buffer_index]);  // L
+                    i2s.write(static_cast<int16_t>(0));  // R
+                }
+                else if(LRMode == LR_PAN_R){
+                    i2s.write(static_cast<int16_t>(0));  // L
+                    i2s.write(buffer[buffer_index]);  // R
+                }
+                buffer_index++;
+            }
+
+        } else {
+            isLed = false;
         }
+    }
+}
 
-        while (buffer_index < BUFFER_SIZE) {
-            if(LRMode == LR_PAN_C){
-                i2s.write(buffer[buffer_index]);  // L
-                i2s.write(buffer[buffer_index]);  // R
-            }
-            else if(LRMode == LR_PAN_L){
-                i2s.write(buffer[buffer_index]);  // L
-                i2s.write(static_cast<int16_t>(0));  // R
-            }
-            else if(LRMode == LR_PAN_R){
-                i2s.write(static_cast<int16_t>(0));  // L
-                i2s.write(buffer[buffer_index]);  // R
-            }
-            buffer_index++;
+void loop1() {
+    while (1) {
+        if(isLed) {
+            digitalWrite(LED_BUILTIN, HIGH);
+        } else {
+            digitalWrite(LED_BUILTIN, LOW);
         }
-
-    } else {
-        digitalWrite(LED_BUILTIN, LOW);
     }
 }

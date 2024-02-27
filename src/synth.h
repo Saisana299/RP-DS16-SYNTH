@@ -15,7 +15,9 @@ private:
         uint8_t note;
         float gain;
         float adsr_gain;
+        float note_off_gain;
         int32_t attack_counter;
+        int32_t decay_counter;
         int32_t release_counter;
         int32_t force_release_counter;
     };
@@ -35,12 +37,14 @@ private:
     const int32_t sample_rate;
 
     // ADSRの定義
+    float sustain_level = 1.0f;
+    float level_diff = 0.0f;
     int32_t attack_sample = static_cast<int32_t>((1.0 / 1000.0) * sample_rate);
-    int32_t decay_sample = static_cast<int32_t>((0.0 / 1000.0) * sample_rate);
-    int16_t sustain_level = 1000;
+    int32_t decay_sample = static_cast<int32_t>((1000.0 / 1000.0) * sample_rate);
     int32_t release_sample = static_cast<int32_t>((1.0 / 1000.0) * sample_rate);
 
-    int32_t force_release_sample = static_cast<int32_t>((10.0 / 1000.0) * sample_rate);
+    // 強制リリース
+    int32_t force_release_sample = static_cast<int32_t>((1.0 / 1000.0) * sample_rate);
 
     // 基本波形とサンプル定義
     uint8_t shape = 0x00;
@@ -151,13 +155,8 @@ public:
         if(notes[noteIndex].active) {
 
             // 強制停止専用release
-            float currentAdsrGain;
-            if (notes[noteIndex].attack_counter >= 0 && notes[noteIndex].attack_counter < attack_sample) {
-                currentAdsrGain = notes[noteIndex].adsr_gain;
-            } else {
-                currentAdsrGain = 1.0f;
-            }
-            notes[noteIndex].force_release_counter = static_cast<int32_t>(currentAdsrGain * force_release_sample);
+            notes[noteIndex].note_off_gain = notes[noteIndex].adsr_gain;
+            notes[noteIndex].force_release_counter = force_release_sample;
 
             // Cacheに保存
             cache.processed = false;
@@ -169,14 +168,7 @@ public:
 
         setFrequency(noteIndex, midiNoteToFrequency(note));
 
-        // リリース中のアタックは現在の位置から行う
-        float currentAdsrGain;
-        if(notes[noteIndex].release_counter >= 0) {
-            currentAdsrGain = notes[noteIndex].adsr_gain;
-        } else {
-            currentAdsrGain = 0.0f;
-        }
-        notes[noteIndex].attack_counter = static_cast<int32_t>(currentAdsrGain * attack_sample);
+        notes[noteIndex].attack_counter = attack_sample;
 
         if(notes[noteIndex].note == 0xff) {
             notes[noteIndex].phase = 0;
@@ -202,17 +194,12 @@ public:
         int8_t noteIndex = getNoteIndex(note);
         if(noteIndex == -1) return;
 
-        // アタック中のリリースはnoteOff時のgainから行う
-        float currentAdsrGain;
-        if (notes[noteIndex].attack_counter >= 0 && notes[noteIndex].attack_counter < attack_sample) {
-            currentAdsrGain = notes[noteIndex].adsr_gain;
-        } else {
-            currentAdsrGain = 1.0f;
-        }
-        // リリースカウンターを現在のADSRゲインに基づいて調整
-        notes[noteIndex].release_counter = static_cast<int32_t>(currentAdsrGain * release_sample);
+        // リリースはnoteOff時のgainから行う
+        notes[noteIndex].note_off_gain = notes[noteIndex].adsr_gain;
+        notes[noteIndex].release_counter = release_sample;
 
         notes[noteIndex].attack_counter = -1;
+        notes[noteIndex].decay_counter = -1;
         notes[noteIndex].actnum = 0;
         updateActNum(noteIndex);
     }
@@ -235,7 +222,9 @@ public:
             notes[i].note = 0xff;
             notes[i].gain = 0.0f;
             notes[i].adsr_gain = 0.0f;
+            notes[i].note_off_gain = 0.0f;
             notes[i].attack_counter = -1;
+            notes[i].decay_counter = -1;
             notes[i].release_counter = -1;
             notes[i].force_release_counter = -1;
         }
@@ -245,46 +234,65 @@ public:
         memset(buffer, 0, sizeof(int16_t) * size); // バッファをクリア
 
         for (uint8_t n = 0; n < MAX_NOTES; ++n) {
-            if (notes[n].active) {
-                if (waveform != nullptr) {
-                    for (size_t i = 0; i < size; i++) {
-                        // ADSRを適用
-                        float adsr_gain = 1.0f;
-                        
-                        // アタック
-                        if (notes[n].attack_counter >= 0 && notes[n].attack_counter < attack_sample) {
-                            adsr_gain = static_cast<float>(notes[n].attack_counter) / attack_sample;
-                            notes[n].attack_counter++;
-                        }
-                        // リリース
-                        else if (notes[n].release_counter >= 0) {
-                            adsr_gain = static_cast<float>(notes[n].release_counter) / release_sample;
-                            if (notes[n].release_counter > 0) notes[n].release_counter--;
-                        }
-                        // 強制リリース
-                        else if (notes[n].force_release_counter >= 0) {
-                            adsr_gain = static_cast<float>(notes[n].force_release_counter) / force_release_sample;
-                            if (notes[n].force_release_counter > 0) notes[n].force_release_counter--;
-                        }
-                        
-                        notes[n].adsr_gain = adsr_gain;
+            if (!notes[n].active) continue;
+            
+            if (waveform != nullptr) {
+                for (size_t i = 0; i < size; i++) {
 
-                        int16_t value = waveform[(notes[n].phase >> bit_shift) % sampleSize];
-                        buffer[i] += value * adsr_gain * notes[n].gain;
-                        notes[n].phase += notes[n].phase_delta;
+                    // 基本レベル
+                    float adsr_gain = 0.0f;
+                    
+                    // アタック
+                    if (notes[n].attack_counter >= 0 && notes[n].attack_counter < attack_sample) {
+                        adsr_gain = static_cast<float>(notes[n].attack_counter) / attack_sample;
+                        notes[n].attack_counter++;
                     }
+                    // ディケイ
+                    else if (notes[n].decay_counter >= 0) {
+                        adsr_gain = 1.0 - (level_diff * (static_cast<float>(notes[n].decay_counter) / decay_sample));
+                        if (notes[n].decay_counter > 0) notes[n].decay_counter--;
+                    }
+                    // リリース
+                    else if (notes[n].release_counter >= 0) {
+                        adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].release_counter) / release_sample);
+                        if (notes[n].release_counter > 0) notes[n].release_counter--;
+                    }
+                    // 強制リリース
+                    else if (notes[n].force_release_counter >= 0) {
+                        adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].force_release_counter) / force_release_sample);
+                        if (notes[n].force_release_counter > 0) notes[n].force_release_counter--;
+                    }
+                    // サステイン
+                    else {
+                        adsr_gain = sustain_level;
+                    }
+                    
+                    notes[n].adsr_gain = adsr_gain;
+
+                    int16_t value = waveform[(notes[n].phase >> bit_shift) % sampleSize];
+                    buffer[i] += value * adsr_gain * notes[n].gain;
+                    notes[n].phase += notes[n].phase_delta;
                 }
+            }
 
-                if (notes[n].release_counter == 0 || notes[n].force_release_counter == 0) {
-                    notes[n].release_counter = -1;
-                    notes[n].active = false;
-                    notes[n].note = 0xff;
-                    notes[n].gain = 0.0f;
+            if (notes[n].attack_counter >= attack_sample) {
+                notes[n].attack_counter = -1;
+                notes[n].decay_counter = decay_sample;
+            }
 
-                    if(notes[n].actnum == cache.actnum && !cache.processed) {
-                        cache.processed = true;
-                        noteOn(cache.note, cache.velocity);
-                    }
+            if (notes[n].decay_counter == 0) {
+                notes[n].decay_counter = -1;
+            }
+
+            if (notes[n].release_counter == 0 || notes[n].force_release_counter == 0) {
+                notes[n].release_counter = -1;
+                notes[n].active = false;
+                notes[n].note = 0xff;
+                notes[n].gain = 0.0f;
+
+                if(notes[n].actnum == cache.actnum && !cache.processed) {
+                    cache.processed = true;
+                    noteOn(cache.note, cache.velocity);
                 }
             }
         }
@@ -326,5 +334,14 @@ public:
 
     void setRelease(int16_t release) {
         release_sample = static_cast<int32_t>((release / 1000.0) * sample_rate);
+    }
+
+    void setDecay(int16_t decay) {
+        decay_sample = static_cast<int32_t>((decay / 1000.0) * sample_rate);
+    }
+
+    void setSustain(int16_t sustain) {
+        sustain_level = sustain / 1000.0;
+        level_diff = 1.0f - sustain_level;
     }
 };
