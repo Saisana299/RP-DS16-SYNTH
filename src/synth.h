@@ -250,7 +250,7 @@ public:
                     }
                     // ディケイ
                     else if (notes[n].decay_counter >= 0) {
-                        adsr_gain = 1.0 - (level_diff * (static_cast<float>(notes[n].decay_counter) / decay_sample));
+                        adsr_gain = sustain_level + (level_diff * (static_cast<float>(notes[n].decay_counter) / decay_sample));
                         if (notes[n].decay_counter > 0) notes[n].decay_counter--;
                     }
                     // リリース
