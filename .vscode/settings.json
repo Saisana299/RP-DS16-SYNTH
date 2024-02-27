@@ -13,6 +13,7 @@
         "cmath": "cpp",
         "initializer_list": "cpp",
         "memory": "cpp",
-        "algorithm": "cpp"
+        "algorithm": "cpp",
+        "random": "cpp"
     }
 }

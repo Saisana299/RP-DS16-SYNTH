@@ -4,7 +4,9 @@
 
 // todo
 // 二音を高速で連続発声させるとattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
-// ADSR generate内処理の方法を変える (int32_tを使わない。カウント用の変数を用意して。極力floatを使わない)
+// ADSR処理の最適化
+// Attackバグ修正
+// SINGLEMODEの時の振り分けをどうやる？
 
 class WaveGenerator {
 private:
@@ -281,11 +283,11 @@ public:
                 notes[n].decay_counter = decay_sample;
             }
 
-            if (notes[n].decay_counter == 0) {
+            else if (notes[n].decay_counter == 0) {
                 notes[n].decay_counter = -1;
             }
 
-            if (notes[n].release_counter == 0 || notes[n].force_release_counter == 0) {
+            else if (notes[n].release_counter == 0 || notes[n].force_release_counter == 0) {
                 notes[n].release_counter = -1;
                 notes[n].active = false;
                 notes[n].note = 0xff;
