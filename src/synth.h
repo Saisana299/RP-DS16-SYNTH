@@ -4,6 +4,7 @@
 
 // todo
 // 二音を高速で連続発声させるとattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
+// ADSR generate内処理の方法を変える (int32_tを使わない。カウント用の変数を用意して。極力floatを使わない)
 
 class WaveGenerator {
 private:
