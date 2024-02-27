@@ -6,6 +6,7 @@
 // 二音を高速で連続発声させるとattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
 // ADSR処理の最適化
 // SINGLEMODEの時の振り分けをどうやる？
+// Attack→Decayのノイズ？
 
 class WaveGenerator {
 private:
@@ -41,12 +42,12 @@ private:
     // ADSRの定義
     float sustain_level = 1.0f;
     float level_diff = 0.0f;
-    int32_t attack_sample = static_cast<int32_t>((1.0 / 1000.0) * sample_rate);
-    int32_t decay_sample = static_cast<int32_t>((1000.0 / 1000.0) * sample_rate);
-    int32_t release_sample = static_cast<int32_t>((1.0 / 1000.0) * sample_rate);
+    int32_t attack_sample = static_cast<int32_t>((1.0 * 0.001) * sample_rate);
+    int32_t decay_sample = static_cast<int32_t>((1000.0 * 0.001) * sample_rate);
+    int32_t release_sample = static_cast<int32_t>((1.0 * 0.001) * sample_rate);
 
     // 強制リリース
-    int32_t force_release_sample = static_cast<int32_t>((1.0 / 1000.0) * sample_rate);
+    int32_t force_release_sample = static_cast<int32_t>((1.0 * 0.001) * sample_rate);
 
     // 基本波形とサンプル定義
     uint8_t shape = 0x00;
@@ -331,19 +332,19 @@ public:
     }
 
     void setAttack(int16_t attack) {
-        attack_sample = static_cast<int32_t>((attack / 1000.0) * sample_rate);
+        attack_sample = static_cast<int32_t>((attack * 0.001) * sample_rate);
     }
 
     void setRelease(int16_t release) {
-        release_sample = static_cast<int32_t>((release / 1000.0) * sample_rate);
+        release_sample = static_cast<int32_t>((release * 0.001) * sample_rate);
     }
 
     void setDecay(int16_t decay) {
-        decay_sample = static_cast<int32_t>((decay / 1000.0) * sample_rate);
+        decay_sample = static_cast<int32_t>((decay * 0.001) * sample_rate);
     }
 
     void setSustain(int16_t sustain) {
-        sustain_level = sustain / 1000.0;
+        sustain_level = sustain * 0.001;
         level_diff = 1.0f - sustain_level;
     }
 };
