@@ -5,7 +5,6 @@
 // todo
 // 二音を高速で連続発声させるとattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
 // ADSR処理の最適化
-// Attackバグ修正
 // SINGLEMODEの時の振り分けをどうやる？
 
 class WaveGenerator {
@@ -171,7 +170,7 @@ public:
 
         setFrequency(noteIndex, midiNoteToFrequency(note));
 
-        notes[noteIndex].attack_counter = attack_sample;
+        notes[noteIndex].attack_counter = 0;
 
         if(notes[noteIndex].note == 0xff) {
             notes[noteIndex].phase = 0;
