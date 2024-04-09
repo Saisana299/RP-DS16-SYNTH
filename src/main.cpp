@@ -151,6 +151,7 @@ void setup() {
     i2c.setSDA(SDA_PIN);
     i2c.setSCL(SCL_PIN);
     i2c.begin(I2C_ADDR);
+    i2c.setClock(1000000);
     i2c.onReceive(receiveEvent);
 
     debug.init();
