@@ -5,8 +5,9 @@
 // todo
 // 二音を高速で連続発声させるとattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
 // ADSR処理の最適化
-// SINGLEMODEの時の振り分けをどうやる？
 // Attack→Decayのノイズ？
+// リリースが長いとアタックがもたつく
+// たまに音がOFFにならない(CTRLでのシンセ振り分けの問題？)
 
 class WaveGenerator {
 private:
