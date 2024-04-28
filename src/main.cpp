@@ -5,7 +5,7 @@
 #include <synth.h>
 #include <instruction_set.h>
 
-#define SYNTH_ID 1 // 1 or 2
+#define SYNTH_ID 2 // 1 or 2
 
 // debug 関連
 #define DEBUG_MODE 1 //0 or 1

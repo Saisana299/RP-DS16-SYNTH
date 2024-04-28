@@ -6,8 +6,7 @@
 // ADSR処理の最適化
 // Attack→Decayのノイズ？
 // リリースが長いとアタックがもたつく
-// たまに音がOFFにならない(Cacheを無くせばいい？)
-// LEDが消えなくなった
+// たまに音がOFFにならない(CTRLでのシンセ振り分けの問題？)
 
 class WaveGenerator {
 private:
@@ -15,7 +14,7 @@ private:
         uint32_t phase;
         uint32_t phase_delta;
         bool active;
-        uint8_t actnum;
+        int8_t actnum;
         uint8_t note;
         float gain;
         float adsr_gain;
@@ -78,37 +77,68 @@ private:
         return 440.0 * pow(2.0, (midiNote - 69) / 12.0);
     }
 
-    int8_t getNoteIndex(uint8_t note) {
+    int8_t getOldNote() {
+        int8_t index = -1;
+        uint8_t min = 0xff;
         for(uint8_t i = 0; i < MAX_NOTES; i++) {
-            if(notes[i].note == note) return i;
+            if(getActiveNote() == MAX_NOTES) {
+                if(notes[i].actnum < min){
+                    min = notes[i].actnum;
+                    index = i;
+                }
+            } else if(notes[i].active == false) {
+                index = i;
+            }
         }
-        return -1;
+        return index;
     }
+
+    int8_t getNoteIndex(uint8_t note) {
+        int8_t index = -1;
+        for(uint8_t i = 0; i < MAX_NOTES; i++) {
+            if(notes[i].note == note) index = i;
+        }
+        return index;
+    }
+
+    void updateActNumOff(int noteIndex) {
+        if (noteIndex < 0 || noteIndex >= MAX_NOTES) {
+            return;
+        }
+        if (!notes[noteIndex].active) {
+            return;
+        }
+        for (uint8_t i = 0; i < MAX_NOTES; ++i) {
+            if (notes[i].active && notes[i].actnum > notes[noteIndex].actnum) {
+                notes[i].actnum--;
+            }
+        }
+    }
+
+    void updateActNumOn(int noteIndex) {
+        if (noteIndex < 0 || noteIndex >= MAX_NOTES) {
+            return;
+        }
+        if (!notes[noteIndex].active) {
+            return;
+        }
+        if (notes[noteIndex].actnum != 3) return;
+
+        for (uint8_t i = 0; i < MAX_NOTES; ++i) {
+            if (i == noteIndex) continue;
+            if (notes[i].active && notes[i].actnum <= notes[noteIndex].actnum) {
+                notes[i].actnum--;
+            }
+        }
+    }
+
 
     bool isActiveNote(uint8_t note) {
+        bool active = false;
         for(uint8_t i = 0; i < MAX_NOTES; i++) {
             if(notes[i].note == note && notes[i].active == true){
-                return true;
+                active = true;
             }
-        }
-        return false;
-    }
-
-    int8_t getOldNote() {
-        int8_t old = -1;
-        for(int8_t i = 0; i < MAX_NOTES; i++) {
-            if(notes[i].actnum == 0) {
-                return i;
-            }
-            if(notes[i].actnum == 1) old = i;
-        }
-        return old;
-    }
-
-    uint8_t getActnumNote() {
-        uint8_t active = 0;
-        for(uint8_t i = 0; i < MAX_NOTES; i++) {
-            if(notes[i].actnum != 0) active++;
         }
         return active;
     }
@@ -116,10 +146,6 @@ private:
 public:
     WaveGenerator(int32_t rate): sample_rate(rate) {
         noteReset();
-        cache.processed = true;
-        cache.actnum = 0;
-        cache.note = 0x00;
-        cache.velocity = 0x00;
     }
 
     uint8_t getActiveNote() {
@@ -137,7 +163,9 @@ public:
             noteOff(note);
             return;
         }
-        if(isActiveNote(note)) noteStop(note);
+        if(isActiveNote(note)) {
+            noteStop(note);
+        }
 
         int8_t noteIndex = getOldNote();
         if(noteIndex == -1) return;
@@ -152,7 +180,7 @@ public:
             // Cacheに保存
             cache.processed = false;
             cache.note = note;
-            cache.actnum = MAX_NOTES;
+            cache.actnum = notes[noteIndex].actnum;
             cache.velocity = velocity;
             return;
         }
@@ -169,19 +197,11 @@ public:
         notes[noteIndex].force_release_counter = -1;
         notes[noteIndex].note = note;
         notes[noteIndex].gain = (volume_gain / MAX_NOTES) * ((float)velocity / 127.0f);
-        
-        if(getActnumNote() == MAX_NOTES) {
-            for(uint8_t i = 0; i < MAX_NOTES; i++) {
-                if(notes[noteIndex].actnum < notes[i].actnum) {
-                    notes[i].actnum--;
-                }
-            }
-            notes[noteIndex].actnum = MAX_NOTES;
-        }else{
-            notes[noteIndex].actnum = getActnumNote() + 1;
-        }
-
+        notes[noteIndex].actnum = getActiveNote();
         notes[noteIndex].active = true;
+        if(isCache) updateActNumOn(noteIndex);
+
+        //Serial2.println("On:[0]" + String(notes[0].note) + ":" + String(notes[0].actnum) + "[1]"+ String(notes[1].note) + ":" + String(notes[1].actnum) + "[2]"+ String(notes[2].note) + ":" + String(notes[2].actnum) + "[3]"+ String(notes[3].note) + ":" + String(notes[3].actnum));
     }
 
     void noteOff(uint8_t note) {
@@ -196,18 +216,16 @@ public:
         int8_t noteIndex = getNoteIndex(note);
         if(noteIndex == -1) return;
 
-        for(uint8_t i = 0; i < MAX_NOTES; i++) {
-            if(notes[noteIndex].actnum < notes[i].actnum) {
-                notes[i].actnum--;
-            }
-        }
-
         // リリースはnoteOff時のgainから行う
         notes[noteIndex].note_off_gain = notes[noteIndex].adsr_gain;
         notes[noteIndex].release_counter = release_sample;
+
         notes[noteIndex].attack_counter = -1;
         notes[noteIndex].decay_counter = -1;
-        notes[noteIndex].actnum = 0;
+        notes[noteIndex].actnum = -1;
+        updateActNumOff(noteIndex);
+
+        //Serial2.println("Off:[0]" + String(notes[0].note) + ":" + String(notes[0].actnum) + "[1]"+ String(notes[1].note) + ":" + String(notes[1].actnum) + "[2]"+ String(notes[2].note) + ":" + String(notes[2].actnum) + "[3]"+ String(notes[3].note) + ":" + String(notes[3].actnum));
     }
 
     void noteStop(uint8_t note) {
@@ -224,7 +242,7 @@ public:
             notes[i].phase = 0;
             notes[i].phase_delta = 0;
             notes[i].active = false;
-            notes[i].actnum = 0;
+            notes[i].actnum = -1;
             notes[i].note = 0xff;
             notes[i].gain = 0.0f;
             notes[i].adsr_gain = 0.0f;
@@ -296,7 +314,7 @@ public:
                 notes[n].note = 0xff;
                 notes[n].gain = 0.0f;
 
-                if(notes[n].actnum == 1 && !cache.processed) {
+                if(notes[n].actnum == cache.actnum && !cache.processed) {
                     cache.processed = true;
                     noteOn(cache.note, cache.velocity, true);
                 }
