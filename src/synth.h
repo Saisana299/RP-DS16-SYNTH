@@ -1,4 +1,3 @@
-#include <Arduino.h>
 #include <limits.h>
 #include <shape.h>
 
@@ -7,7 +6,8 @@
 // ADSR処理の最適化
 // Attack→Decayのノイズ？
 // リリースが長いとアタックがもたつく
-// たまに音がOFFにならない(CTRLでのシンセ振り分けの問題？)
+// たまに音がOFFにならない(Cacheを無くせばいい？)
+// LEDが消えなくなった
 
 class WaveGenerator {
 private:
@@ -78,53 +78,37 @@ private:
         return 440.0 * pow(2.0, (midiNote - 69) / 12.0);
     }
 
-    int8_t getOldNote() {
-        int8_t index = -1;
-        uint8_t min = 0xff;
-        for(uint8_t i = 0; i < MAX_NOTES; i++) {
-            if(getActiveNote() == MAX_NOTES) {
-                if(notes[i].actnum < min){
-                    min = notes[i].actnum;
-                    index = i;
-                }
-            } else if(notes[i].active == false) {
-                index = i;
-            }
-        }
-        return index;
-    }
-
     int8_t getNoteIndex(uint8_t note) {
-        int8_t index = -1;
         for(uint8_t i = 0; i < MAX_NOTES; i++) {
-            if(notes[i].note == note) index = i;
+            if(notes[i].note == note) return i;
         }
-        return index;
+        return -1;
     }
-
-    void updateActNum(int noteIndex) {
-        if (noteIndex < 0 || noteIndex >= MAX_NOTES) {
-            return;
-        }
-        if (!notes[noteIndex].active) {
-            return;
-        }
-        for (uint8_t i = 0; i < MAX_NOTES; ++i) {
-            // ノートがアクティブであり、かつそのactnumが
-            // 更新されたノートのactnumより大きい場合、デクリメントする
-            if (notes[i].active && notes[i].actnum > notes[noteIndex].actnum) {
-                notes[i].actnum--;
-            }
-        }
-    }
-
 
     bool isActiveNote(uint8_t note) {
-        bool active = false;
         for(uint8_t i = 0; i < MAX_NOTES; i++) {
             if(notes[i].note == note && notes[i].active == true){
-                active = true;
+                return true;
             }
+        }
+        return false;
+    }
+
+    int8_t getOldNote() {
+        int8_t old = -1;
+        for(int8_t i = 0; i < MAX_NOTES; i++) {
+            if(notes[i].actnum == 0) {
+                return i;
+            }
+            if(notes[i].actnum == 1) old = i;
+        }
+        return old;
+    }
+
+    uint8_t getActnumNote() {
+        uint8_t active = 0;
+        for(uint8_t i = 0; i < MAX_NOTES; i++) {
+            if(notes[i].actnum != 0) active++;
         }
         return active;
     }
@@ -132,6 +116,10 @@ private:
 public:
     WaveGenerator(int32_t rate): sample_rate(rate) {
         noteReset();
+        cache.processed = true;
+        cache.actnum = 0;
+        cache.note = 0x00;
+        cache.velocity = 0x00;
     }
 
     uint8_t getActiveNote() {
@@ -142,21 +130,20 @@ public:
         return active;
     }
 
-    void noteOn(uint8_t note, uint8_t velocity) {
+    void noteOn(uint8_t note, uint8_t velocity, bool isCache = false) {
         if(note > 127) return;
         if(velocity > 127) return;
         if(velocity == 0) {
             noteOff(note);
             return;
         }
-        if(isActiveNote(note)) {
-            noteStop(note);
-        }
+        if(isActiveNote(note)) noteStop(note);
 
         int8_t noteIndex = getOldNote();
         if(noteIndex == -1) return;
 
         if(notes[noteIndex].active) {
+            if(isCache) return;
 
             // 強制停止専用release
             notes[noteIndex].note_off_gain = notes[noteIndex].adsr_gain;
@@ -165,7 +152,7 @@ public:
             // Cacheに保存
             cache.processed = false;
             cache.note = note;
-            cache.actnum = notes[noteIndex].actnum;
+            cache.actnum = MAX_NOTES;
             cache.velocity = velocity;
             return;
         }
@@ -182,7 +169,18 @@ public:
         notes[noteIndex].force_release_counter = -1;
         notes[noteIndex].note = note;
         notes[noteIndex].gain = (volume_gain / MAX_NOTES) * ((float)velocity / 127.0f);
-        notes[noteIndex].actnum = getActiveNote();
+        
+        if(getActnumNote() == MAX_NOTES) {
+            for(uint8_t i = 0; i < MAX_NOTES; i++) {
+                if(notes[noteIndex].actnum < notes[i].actnum) {
+                    notes[i].actnum--;
+                }
+            }
+            notes[noteIndex].actnum = MAX_NOTES;
+        }else{
+            notes[noteIndex].actnum = getActnumNote() + 1;
+        }
+
         notes[noteIndex].active = true;
     }
 
@@ -198,14 +196,18 @@ public:
         int8_t noteIndex = getNoteIndex(note);
         if(noteIndex == -1) return;
 
+        for(uint8_t i = 0; i < MAX_NOTES; i++) {
+            if(notes[noteIndex].actnum < notes[i].actnum) {
+                notes[i].actnum--;
+            }
+        }
+
         // リリースはnoteOff時のgainから行う
         notes[noteIndex].note_off_gain = notes[noteIndex].adsr_gain;
         notes[noteIndex].release_counter = release_sample;
-
         notes[noteIndex].attack_counter = -1;
         notes[noteIndex].decay_counter = -1;
         notes[noteIndex].actnum = 0;
-        updateActNum(noteIndex);
     }
 
     void noteStop(uint8_t note) {
@@ -294,9 +296,9 @@ public:
                 notes[n].note = 0xff;
                 notes[n].gain = 0.0f;
 
-                if(notes[n].actnum == cache.actnum && !cache.processed) {
+                if(notes[n].actnum == 1 && !cache.processed) {
                     cache.processed = true;
-                    noteOn(cache.note, cache.velocity);
+                    noteOn(cache.note, cache.velocity, true);
                 }
             }
         }

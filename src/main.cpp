@@ -3,7 +3,7 @@
 #include <Wire.h>
 #include <debug.h>
 #include <synth.h>
-#include <instructionSet.h>
+#include <instruction_set.h>
 
 #define SYNTH_ID 1 // 1 or 2
 
