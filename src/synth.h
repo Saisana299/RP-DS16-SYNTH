@@ -1,13 +1,6 @@
 #include <limits.h>
 #include <shape.h>
 
-// todo
-// 二音を高速で連続発声させるとattackのサンプルが再生されたままになる現象が起こる(releaseは再生されない)
-// ADSR処理の最適化
-// Attack→Decayのノイズ？
-// リリースが長いとアタックがもたつく
-// たまに音がOFFにならない(CTRLでのシンセ振り分けの問題？)
-
 class WaveGenerator {
 private:
     struct Note {
@@ -146,6 +139,10 @@ private:
 public:
     WaveGenerator(int32_t rate): sample_rate(rate) {
         noteReset();
+        cache.processed = true;
+        cache.actnum = 0;
+        cache.note = 0;
+        cache.velocity = 0;
     }
 
     uint8_t getActiveNote() {
@@ -200,8 +197,6 @@ public:
         notes[noteIndex].actnum = getActiveNote();
         notes[noteIndex].active = true;
         if(isCache) updateActNumOn(noteIndex);
-
-        //Serial2.println("On:[0]" + String(notes[0].note) + ":" + String(notes[0].actnum) + "[1]"+ String(notes[1].note) + ":" + String(notes[1].actnum) + "[2]"+ String(notes[2].note) + ":" + String(notes[2].actnum) + "[3]"+ String(notes[3].note) + ":" + String(notes[3].actnum));
     }
 
     void noteOff(uint8_t note) {
@@ -224,9 +219,7 @@ public:
         notes[noteIndex].decay_counter = -1;
         notes[noteIndex].actnum = -1;
         updateActNumOff(noteIndex);
-
-        //Serial2.println("Off:[0]" + String(notes[0].note) + ":" + String(notes[0].actnum) + "[1]"+ String(notes[1].note) + ":" + String(notes[1].actnum) + "[2]"+ String(notes[2].note) + ":" + String(notes[2].actnum) + "[3]"+ String(notes[3].note) + ":" + String(notes[3].actnum));
-    }
+   }
 
     void noteStop(uint8_t note) {
         if(!isActiveNote(note)) return;
@@ -271,20 +264,20 @@ public:
                         adsr_gain = static_cast<float>(notes[n].attack_counter) / attack_sample;
                         notes[n].attack_counter++;
                     }
-                    // ディケイ
-                    else if (notes[n].decay_counter >= 0) {
-                        adsr_gain = sustain_level + (level_diff * (static_cast<float>(notes[n].decay_counter) / decay_sample));
-                        if (notes[n].decay_counter > 0) notes[n].decay_counter--;
+                    // 強制リリース
+                    else if (notes[n].force_release_counter >= 0) {
+                        adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].force_release_counter) / force_release_sample);
+                        if (notes[n].force_release_counter > 0) notes[n].force_release_counter--;
                     }
                     // リリース
                     else if (notes[n].release_counter >= 0) {
                         adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].release_counter) / release_sample);
                         if (notes[n].release_counter > 0) notes[n].release_counter--;
                     }
-                    // 強制リリース
-                    else if (notes[n].force_release_counter >= 0) {
-                        adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].force_release_counter) / force_release_sample);
-                        if (notes[n].force_release_counter > 0) notes[n].force_release_counter--;
+                    // ディケイ
+                    else if (notes[n].decay_counter >= 0) {
+                        adsr_gain = sustain_level + (level_diff * (static_cast<float>(notes[n].decay_counter) / decay_sample));
+                        if (notes[n].decay_counter > 0) notes[n].decay_counter--;
                     }
                     // サステイン
                     else {
@@ -304,10 +297,6 @@ public:
                 notes[n].decay_counter = decay_sample;
             }
 
-            else if (notes[n].decay_counter == 0) {
-                notes[n].decay_counter = -1;
-            }
-
             else if (notes[n].release_counter == 0 || notes[n].force_release_counter == 0) {
                 notes[n].release_counter = -1;
                 notes[n].active = false;
@@ -318,6 +307,10 @@ public:
                     cache.processed = true;
                     noteOn(cache.note, cache.velocity, true);
                 }
+            }
+
+            else if (notes[n].decay_counter == 0) {
+                notes[n].decay_counter = -1;
             }
         }
 
