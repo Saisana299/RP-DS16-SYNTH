@@ -1,15 +1,12 @@
 #include <Arduino.h>
 #include <I2S.h>
 #include <Wire.h>
-#include <debug.h>
 #include <synth.h>
 #include <instruction_set.h>
+#include <wokwi.h>
 
+// SynthIDを選択
 #define SYNTH_ID 1 // 1 or 2
-
-// debug 関連
-#define DEBUG_MODE 1 //0 or 1
-Debug debug(DEBUG_MODE, Serial2, 8, 9, 115200);
 
 // CTRL 関連
 #if SYNTH_ID == 1
@@ -154,7 +151,10 @@ void setup() {
     i2c.setClock(1000000);
     i2c.onReceive(receiveEvent);
 
-    debug.init();
+    // DebugPin
+    Serial2.setTX(8);
+    Serial2.setRX(9);
+    Serial2.begin(1000000);
 
     i2s.setBCLK(PIN_I2S_BCLK);
     i2s.setDATA(PIN_I2S_DOUT);
@@ -166,6 +166,16 @@ void setup() {
 
 void loop() {
     while (1) {
+
+        #if WOKWI_MODE == 1
+            delay(10);
+            if(isLed) {
+                digitalWrite(LED_BUILTIN, HIGH);
+            } else {
+                digitalWrite(LED_BUILTIN, LOW);
+            }
+        #endif
+
         if (wave.getActiveNote() != 0) {
             static size_t buffer_index = 0;
 
@@ -197,6 +207,7 @@ void loop() {
     }
 }
 
+#if WOKWI_MODE != 1
 void loop1() {
     while (1) {
         if(isLed) {
@@ -206,3 +217,4 @@ void loop1() {
         }
     }
 }
+#endif
