@@ -187,6 +187,15 @@ public:
         if(i == -1) return;
 
         if(notes[i].active && !isCache) {
+            // タブった場合 //1つ減らすのではなく最適な数値を選択できるようにする
+            for (int j = 0; j < 3; j++) {
+                if (cache[i].processed == false) {
+                    i = (i == 0) ? 3 : i - 1;
+                } else {
+                    break;
+                }
+            }
+
             // 強制停止専用release
             notes[i].note_off_gain = notes[i].adsr_gain;
             notes[i].force_release_cnt = force_release_sample;
@@ -198,6 +207,7 @@ public:
             cache[i].processed = false;
             cache[i].note = note;
             cache[i].velocity = velocity;
+
             return;
         }
 
@@ -348,7 +358,6 @@ public:
                 notes[n].note = 0xff;
                 notes[n].gain = 0.0f;
 
-                //if(notes[n].actnum == cache[n].actnum && !cache[n].processed) {
                 if(!cache[n].processed) {
                     cache[n].processed = true;
                     noteOn(cache[n].note, cache[n].velocity, true, n);
