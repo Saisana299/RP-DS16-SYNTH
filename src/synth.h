@@ -31,15 +31,13 @@ private:
 
     struct NoteCache {
         bool processed;
-        uint8_t actnum;
         uint8_t note;
         uint8_t velocity;
-        uint8_t index;
     };
 
     static const int MAX_NOTES = 4;
     Note notes[MAX_NOTES];
-    NoteCache cache;
+    NoteCache cache[MAX_NOTES];
 
     float volume_gain = 1.0f;
 
@@ -151,11 +149,11 @@ private:
 public:
     WaveGenerator(int32_t rate): SAMPLE_RATE(rate) {
         noteReset();
-        cache.processed = true;
-        cache.actnum = 0;
-        cache.note = 0;
-        cache.velocity = 0;
-        cache.index = 0;
+        for(uint8_t i = 0; i < MAX_NOTES; i++) {
+            cache[i].processed = true;
+            cache[i].note = 0;
+            cache[i].velocity = 0;
+        }
     }
 
     uint8_t getActiveNote() {
@@ -172,7 +170,7 @@ public:
         return true;
     }
 
-    void noteOn(uint8_t note, uint8_t velocity, bool isCache = false) {
+    void noteOn(uint8_t note, uint8_t velocity, bool isCache = false, uint8_t cacheIndex = 0) {
         if(note > 127) return;
         if(velocity > 127) return;
         if(velocity == 0) {
@@ -185,7 +183,7 @@ public:
         }
 
         int8_t i = getOldNote();
-        if(isCache) i = cache.index;
+        if(isCache) i = cacheIndex;
         if(i == -1) return;
 
         if(notes[i].active && !isCache) {
@@ -194,14 +192,12 @@ public:
             notes[i].force_release_cnt = force_release_sample;
             notes[i].attack_cnt = -1;
             notes[i].decay_cnt = -1;
-            //notes[i].actnum = -1;
+            notes[i].actnum = -1;
 
             // Cacheに保存
-            cache.processed = false;
-            cache.note = note;
-            cache.actnum = notes[i].actnum;
-            cache.velocity = velocity;
-            cache.index = i;
+            cache[i].processed = false;
+            cache[i].note = note;
+            cache[i].velocity = velocity;
             return;
         }
 
@@ -231,8 +227,10 @@ public:
 
     void noteOff(uint8_t note) {
         // cache にある場合は消す
-        if(cache.note == note && !cache.processed) {
-            cache.processed = true;
+        for(uint8_t n = 0; n < MAX_NOTES; n++) {
+            if(cache[n].note == note && !cache[n].processed) {
+                cache[n].processed = true;
+            }
         }
 
         if(!isActiveNote(note)) return;
@@ -350,9 +348,10 @@ public:
                 notes[n].note = 0xff;
                 notes[n].gain = 0.0f;
 
-                if(notes[n].actnum == cache.actnum && !cache.processed) {
-                    cache.processed = true;
-                    noteOn(cache.note, cache.velocity, true);
+                //if(notes[n].actnum == cache[n].actnum && !cache[n].processed) {
+                if(!cache[n].processed) {
+                    cache[n].processed = true;
+                    noteOn(cache[n].note, cache[n].velocity, true, n);
                 }
             }
 
