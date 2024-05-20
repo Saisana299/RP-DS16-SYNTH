@@ -104,20 +104,6 @@ private:
         return index;
     }
 
-    void updateActNumOff(int noteIndex) {
-        if (noteIndex < 0 || noteIndex >= MAX_NOTES) {
-            return;
-        }
-        if (!notes[noteIndex].active) {
-            return;
-        }
-        for (uint8_t i = 0; i < MAX_NOTES; ++i) {
-            if (notes[i].active && notes[i].actnum > notes[noteIndex].actnum) {
-                notes[i].actnum--;
-            }
-        }
-    }
-
     void updateActNumOn(int noteIndex) {
         if (noteIndex < 0 || noteIndex >= MAX_NOTES) {
             return;
@@ -130,11 +116,21 @@ private:
         for (uint8_t i = 0; i < MAX_NOTES; ++i) {
             if (i == noteIndex) continue;
             if (notes[i].active && notes[i].actnum <= notes[noteIndex].actnum) {
-                notes[i].actnum--;
+                if(notes[i].actnum > -1) notes[i].actnum--;
             }
         }
     }
 
+    void updateActNumOff(int noteIndex) {
+        if (noteIndex < 0 || noteIndex >= MAX_NOTES) {
+            return;
+        }
+        for (uint8_t i = 0; i < MAX_NOTES; ++i) {
+            if (notes[i].actnum > notes[noteIndex].actnum) {
+                if(notes[i].actnum > -1) notes[i].actnum--;
+            }
+        }
+    }
 
     bool isActiveNote(uint8_t note) {
         bool active = false;
@@ -178,30 +174,20 @@ public:
             return;
         }
 
-        if(isActiveNote(note)) {
-            noteStop(note);
-        }
-
         int8_t i = getOldNote();
+        if(isActiveNote(note)) {
+            i = getNoteIndex(note);
+        }
         if(isCache) i = cacheIndex;
         if(i == -1) return;
 
         if(notes[i].active && !isCache) {
-            // タブった場合 //1つ減らすのではなく最適な数値を選択できるようにする
-            for (int j = 0; j < 3; j++) {
-                if (cache[i].processed == false) {
-                    i = (i == 0) ? 3 : i - 1;
-                } else {
-                    break;
-                }
-            }
 
             // 強制停止専用release
             notes[i].note_off_gain = notes[i].adsr_gain;
             notes[i].force_release_cnt = force_release_sample;
             notes[i].attack_cnt = -1;
             notes[i].decay_cnt = -1;
-            notes[i].actnum = -1;
 
             // Cacheに保存
             cache[i].processed = false;
@@ -230,9 +216,20 @@ public:
         notes[i].force_release_cnt = -1;
         notes[i].note = note;
         notes[i].gain = (volume_gain / MAX_NOTES) * ((float)velocity / 127.0f);
-        notes[i].actnum = getActiveNote();
-        notes[i].active = true;
+
         if(isCache) updateActNumOn(i);
+
+        // actnumの更新
+        int8_t newActNum = -1;
+        for(uint8_t j = 0; j < MAX_NOTES; j++) {
+            if(notes[j].actnum > newActNum) newActNum = notes[j].actnum;
+        }
+        newActNum++;
+        if(newActNum >= 4) newActNum = 3;
+        else if(newActNum == -1) newActNum = 0;
+        notes[i].actnum = newActNum;
+
+        notes[i].active = true;
     }
 
     void noteOff(uint8_t note) {
@@ -254,23 +251,7 @@ public:
 
         notes[i].attack_cnt = -1;
         notes[i].decay_cnt = -1;
-        notes[i].actnum = -1;
-        updateActNumOff(i);
    }
-
-    void noteStop(uint8_t note) {
-        if(!isActiveNote(note)) return;
-
-        int8_t i = getNoteIndex(note);
-        if(i == -1) return;
-
-        notes[i].note_off_gain = notes[i].adsr_gain;
-        notes[i].force_release_cnt = force_release_sample;
-
-        notes[i].attack_cnt = -1;
-        notes[i].decay_cnt = -1;
-        notes[i].actnum = -1;
-    }
 
     void noteReset() {
         for(uint8_t i = 0; i < MAX_NOTES; i++) {
@@ -357,6 +338,9 @@ public:
                 notes[n].active = false;
                 notes[n].note = 0xff;
                 notes[n].gain = 0.0f;
+
+                updateActNumOff(n); // 更新してから-1にする
+                notes[n].actnum = -1;
 
                 if(!cache[n].processed) {
                     cache[n].processed = true;
