@@ -277,41 +277,6 @@ public:
         }
     }
 
-    float applyEnvelope(uint8_t n) {
-
-        // 基本レベル
-        float adsr_gain = 0.0f;
-        
-        // アタック
-        if (notes[n].attack_cnt >= 0 && notes[n].attack_cnt < notes[n].attack) {
-            adsr_gain = static_cast<float>(notes[n].attack_cnt) / notes[n].attack;
-            notes[n].attack_cnt++;
-        }
-        // 強制リリース
-        else if (notes[n].force_release_cnt >= 0) {
-            adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].force_release_cnt) / notes[n].force_release);
-            if (notes[n].force_release_cnt > 0) notes[n].force_release_cnt--;
-        }
-        // リリース
-        else if (notes[n].release_cnt >= 0) {
-            adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].release_cnt) / notes[n].release);
-            if (notes[n].release_cnt > 0) notes[n].release_cnt--;
-        }
-        // ディケイ
-        else if (notes[n].decay_cnt >= 0) {
-            adsr_gain = notes[n].sustain + (notes[n].level_diff * (static_cast<float>(notes[n].decay_cnt) / notes[n].decay));
-            if (notes[n].decay_cnt > 0) notes[n].decay_cnt--;
-        }
-        // サステイン
-        else {
-            adsr_gain = notes[n].sustain;
-        }
-        
-        notes[n].adsr_gain = adsr_gain;
-
-        return adsr_gain;
-    }
-
     void generate(int16_t *buffer, size_t size) {
         memset(buffer, 0, sizeof(int16_t) * size); // バッファをクリア
 
@@ -321,23 +286,42 @@ public:
             if (osc1_wave != nullptr) {
                 for (size_t i = 0; i < size; i++) {
 
-                    // OSC1適用
-                    int16_t osc1 = osc1_wave[(notes[n].phase >> BIT_SHIFT) % SAMPLE_SIZE];
-                    buffer[i] += osc1;
-
-                    // OSC2適用
-                    if(osc2_wave != nullptr) {
-                        int16_t osc2 = osc2_wave[(notes[n].phase >> BIT_SHIFT) % SAMPLE_SIZE];
-                        buffer[i] += osc2;
-                    }
-
-                    // ADSRゲイン適用
-                    float adsr_gain = applyEnvelope(n);
-                    buffer[i] *= adsr_gain;
-
-                    // ノートゲイン適用
-                    buffer[i] *= notes[n].gain;
+                    // 基本レベル
+                    float adsr_gain = 0.0f;
                     
+                    // アタック
+                    if (notes[n].attack_cnt >= 0 && notes[n].attack_cnt < notes[n].attack) {
+                        adsr_gain = static_cast<float>(notes[n].attack_cnt) / notes[n].attack;
+                        notes[n].attack_cnt++;
+                    }
+                    // 強制リリース
+                    else if (notes[n].force_release_cnt >= 0) {
+                        adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].force_release_cnt) / notes[n].force_release);
+                        if (notes[n].force_release_cnt > 0) notes[n].force_release_cnt--;
+                    }
+                    // リリース
+                    else if (notes[n].release_cnt >= 0) {
+                        adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].release_cnt) / notes[n].release);
+                        if (notes[n].release_cnt > 0) notes[n].release_cnt--;
+                    }
+                    // ディケイ
+                    else if (notes[n].decay_cnt >= 0) {
+                        adsr_gain = notes[n].sustain + (notes[n].level_diff * (static_cast<float>(notes[n].decay_cnt) / notes[n].decay));
+                        if (notes[n].decay_cnt > 0) notes[n].decay_cnt--;
+                    }
+                    // サステイン
+                    else {
+                        adsr_gain = notes[n].sustain;
+                    }
+                    
+                    notes[n].adsr_gain = adsr_gain;
+
+                    int16_t value = osc1_wave[(notes[n].phase >> BIT_SHIFT) % SAMPLE_SIZE];
+                    //osc2の処理
+
+                    // ウェーブ書き込み
+                    buffer[i] += value * adsr_gain * notes[n].gain;
+
                     // ピッチ適用
                     notes[n].phase += notes[n].phase_delta;
                 }

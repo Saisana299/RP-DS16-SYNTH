@@ -168,7 +168,7 @@ void setup() {
     i2c.begin(I2C_ADDR);
     i2c.setClock(1000000);
     i2c.onReceive(receiveEvent);
-    //i2c.onRequest(requestEvent);
+    i2c.onRequest(requestEvent);
 
     // DebugPin
     Serial2.setTX(8);
