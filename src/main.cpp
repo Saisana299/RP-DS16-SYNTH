@@ -6,7 +6,7 @@
 #include <wokwi.h>
 
 // SynthIDを選択
-#define SYNTH_ID 1 // 1 or 2
+#define SYNTH_ID 2 // 1 or 2
 
 // CTRL 関連
 #if SYNTH_ID == 1
@@ -173,7 +173,7 @@ void setup() {
     // DebugPin
     Serial2.setTX(8);
     Serial2.setRX(9);
-    Serial2.begin(1000000);
+    Serial2.begin(115200);
 
     i2s.setBCLK(PIN_I2S_BCLK);
     i2s.setDATA(PIN_I2S_DOUT);

@@ -34,6 +34,7 @@ private:
         uint8_t actnum;
         uint8_t note;
         uint8_t velocity;
+        uint8_t index;
     };
 
     static const int MAX_NOTES = 4;
@@ -154,6 +155,7 @@ public:
         cache.actnum = 0;
         cache.note = 0;
         cache.velocity = 0;
+        cache.index = 0;
     }
 
     uint8_t getActiveNote() {
@@ -183,23 +185,23 @@ public:
         }
 
         int8_t i = getOldNote();
+        if(isCache) i = cache.index;
         if(i == -1) return;
 
-        if(notes[i].active) {
-            if(isCache) return;
-
+        if(notes[i].active && !isCache) {
             // 強制停止専用release
             notes[i].note_off_gain = notes[i].adsr_gain;
             notes[i].force_release_cnt = force_release_sample;
             notes[i].attack_cnt = -1;
             notes[i].decay_cnt = -1;
-            notes[i].actnum = -1;
+            //notes[i].actnum = -1;
 
             // Cacheに保存
             cache.processed = false;
             cache.note = note;
             cache.actnum = notes[i].actnum;
             cache.velocity = velocity;
+            cache.index = i;
             return;
         }
 
@@ -231,7 +233,6 @@ public:
         // cache にある場合は消す
         if(cache.note == note && !cache.processed) {
             cache.processed = true;
-            return;
         }
 
         if(!isActiveNote(note)) return;
