@@ -37,6 +37,8 @@ int16_t buffer[BUFFER_SIZE];
 uint8_t LRMode = LR_PAN_C;
 bool isLed = false;
 
+uint8_t response = 0x00;
+
 void receiveEvent(int bytes) {
     // 2バイト以上のみ受け付ける
     if(bytes < 2) return;
@@ -141,7 +143,23 @@ void receiveEvent(int bytes) {
                 wave.setSustain(sustain);
             }
             break;
+
+        // 例: {INS_BEGIN, SYNTH_GET_USED}
+        case SYNTH_GET_USED:
+            response = wave.getActiveNote();
+            break;
+
+        // 例: {INS_BEGIN, SYNTH_IS_NOTE, 0x64}
+        case SYNTH_IS_NOTE:
+            if(wave.isNote(receivedData[2])) response = 0x01;
+            else response = 0x00;
+            break;
     }
+}
+
+void requestEvent() {
+    i2c.write(response);
+    response = 0x00;
 }
 
 void setup() {
@@ -150,6 +168,7 @@ void setup() {
     i2c.begin(I2C_ADDR);
     i2c.setClock(1000000);
     i2c.onReceive(receiveEvent);
+    //i2c.onRequest(requestEvent);
 
     // DebugPin
     Serial2.setTX(8);

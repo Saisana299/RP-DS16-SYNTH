@@ -164,6 +164,12 @@ public:
         return active;
     }
 
+    bool isNote(uint8_t note) {
+        int8_t i = getNoteIndex(note);
+        if(i == -1) return false;
+        return true;
+    }
+
     void noteOn(uint8_t note, uint8_t velocity, bool isCache = false) {
         if(note > 127) return;
         if(velocity > 127) return;
@@ -271,37 +277,37 @@ public:
         }
     }
 
-    float applyEnvelope(Note *note) {
+    float applyEnvelope(uint8_t n) {
 
         // 基本レベル
         float adsr_gain = 0.0f;
         
         // アタック
-        if (note->attack_cnt >= 0 && note->attack_cnt < note->attack) {
-            adsr_gain = static_cast<float>(note->attack_cnt) / note->attack;
-            note->attack_cnt++;
+        if (notes[n].attack_cnt >= 0 && notes[n].attack_cnt < notes[n].attack) {
+            adsr_gain = static_cast<float>(notes[n].attack_cnt) / notes[n].attack;
+            notes[n].attack_cnt++;
         }
         // 強制リリース
-        else if (note->force_release_cnt >= 0) {
-            adsr_gain = note->note_off_gain * (static_cast<float>(note->force_release_cnt) / note->force_release);
-            if (note->force_release_cnt > 0) note->force_release_cnt--;
+        else if (notes[n].force_release_cnt >= 0) {
+            adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].force_release_cnt) / notes[n].force_release);
+            if (notes[n].force_release_cnt > 0) notes[n].force_release_cnt--;
         }
         // リリース
-        else if (note->release_cnt >= 0) {
-            adsr_gain = note->note_off_gain * (static_cast<float>(note->release_cnt) / note->release);
-            if (note->release_cnt > 0) note->release_cnt--;
+        else if (notes[n].release_cnt >= 0) {
+            adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].release_cnt) / notes[n].release);
+            if (notes[n].release_cnt > 0) notes[n].release_cnt--;
         }
         // ディケイ
-        else if (note->decay_cnt >= 0) {
-            adsr_gain = note->sustain + (note->level_diff * (static_cast<float>(note->decay_cnt) / note->decay));
-            if (note->decay_cnt > 0) note->decay_cnt--;
+        else if (notes[n].decay_cnt >= 0) {
+            adsr_gain = notes[n].sustain + (notes[n].level_diff * (static_cast<float>(notes[n].decay_cnt) / notes[n].decay));
+            if (notes[n].decay_cnt > 0) notes[n].decay_cnt--;
         }
         // サステイン
         else {
-            adsr_gain = note->sustain;
+            adsr_gain = notes[n].sustain;
         }
         
-        note->adsr_gain = adsr_gain;
+        notes[n].adsr_gain = adsr_gain;
 
         return adsr_gain;
     }
@@ -326,7 +332,7 @@ public:
                     }
 
                     // ADSRゲイン適用
-                    float adsr_gain = applyEnvelope(&notes[n]);
+                    float adsr_gain = applyEnvelope(n);
                     buffer[i] *= adsr_gain;
 
                     // ノートゲイン適用
