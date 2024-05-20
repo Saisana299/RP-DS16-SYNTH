@@ -177,6 +177,7 @@ public:
             noteOff(note);
             return;
         }
+
         if(isActiveNote(note)) {
             noteStop(note);
         }
@@ -190,6 +191,9 @@ public:
             // 強制停止専用release
             notes[i].note_off_gain = notes[i].adsr_gain;
             notes[i].force_release_cnt = force_release_sample;
+            notes[i].attack_cnt = -1;
+            notes[i].decay_cnt = -1;
+            notes[i].actnum = -1;
 
             // Cacheに保存
             cache.processed = false;
@@ -251,7 +255,12 @@ public:
         int8_t i = getNoteIndex(note);
         if(i == -1) return;
 
-        notes[i].active = false;
+        notes[i].note_off_gain = notes[i].adsr_gain;
+        notes[i].force_release_cnt = force_release_sample;
+
+        notes[i].attack_cnt = -1;
+        notes[i].decay_cnt = -1;
+        notes[i].actnum = -1;
     }
 
     void noteReset() {
