@@ -41,22 +41,25 @@ private:
     NoteCache cache;
 
     float volume_gain = 1.0f;
-    const int32_t sample_rate;
+
+    // 定数
+    const int32_t SAMPLE_RATE;
+    const size_t SAMPLE_SIZE = 2048;
+    const uint8_t BIT_SHIFT = bitShift(SAMPLE_SIZE);
 
     // ADSRの定義
     float sustain_level = 1.0f;
     float level_diff = 0.0f;
-    int32_t attack_sample = static_cast<int32_t>((1.0 * 0.001) * sample_rate);
-    int32_t decay_sample = static_cast<int32_t>((1000.0 * 0.001) * sample_rate);
-    int32_t release_sample = static_cast<int32_t>((1.0 * 0.001) * sample_rate);
+    int32_t attack_sample = static_cast<int32_t>((1.0 * 0.001) * SAMPLE_RATE);
+    int32_t decay_sample = static_cast<int32_t>((1000.0 * 0.001) * SAMPLE_RATE);
+    int32_t release_sample = static_cast<int32_t>((1.0 * 0.001) * SAMPLE_RATE);
 
     // 強制リリース
-    int32_t force_release_sample = static_cast<int32_t>((1.0 * 0.001) * sample_rate);
+    int32_t force_release_sample = static_cast<int32_t>((1.0 * 0.001) * SAMPLE_RATE);
 
-    // 基本波形とサンプル定義
-    uint8_t shape = 0x00;
-    size_t sampleSize = sizeof(sine) / sizeof(sine[0]);
-    int16_t* waveform = sine;
+    // 波形
+    int16_t* osc1_wave = sine;
+    int16_t* osc2_wave = nullptr;
 
     // ビットシフト
     uint8_t bitShift(size_t tableSize) {
@@ -68,12 +71,9 @@ private:
         return 32 - shift;
     }
 
-    // 初期化
-    uint8_t bit_shift = bitShift(sampleSize);
-
     void setFrequency(int noteIndex, float frequency) {
         if (noteIndex >= 0 && noteIndex < MAX_NOTES) {
-            notes[noteIndex].phase_delta = frequency * (float)(1ULL << 32) / sample_rate;
+            notes[noteIndex].phase_delta = frequency * (float)(1ULL << 32) / SAMPLE_RATE;
         }
     }
 
@@ -148,7 +148,7 @@ private:
     }
 
 public:
-    WaveGenerator(int32_t rate): sample_rate(rate) {
+    WaveGenerator(int32_t rate): SAMPLE_RATE(rate) {
         noteReset();
         cache.processed = true;
         cache.actnum = 0;
@@ -271,56 +271,79 @@ public:
         }
     }
 
+    float applyEnvelope(Note *note) {
+
+        // 基本レベル
+        float adsr_gain = 0.0f;
+        
+        // アタック
+        if (note->attack_cnt >= 0 && note->attack_cnt < note->attack) {
+            adsr_gain = static_cast<float>(note->attack_cnt) / note->attack;
+            note->attack_cnt++;
+        }
+        // 強制リリース
+        else if (note->force_release_cnt >= 0) {
+            adsr_gain = note->note_off_gain * (static_cast<float>(note->force_release_cnt) / note->force_release);
+            if (note->force_release_cnt > 0) note->force_release_cnt--;
+        }
+        // リリース
+        else if (note->release_cnt >= 0) {
+            adsr_gain = note->note_off_gain * (static_cast<float>(note->release_cnt) / note->release);
+            if (note->release_cnt > 0) note->release_cnt--;
+        }
+        // ディケイ
+        else if (note->decay_cnt >= 0) {
+            adsr_gain = note->sustain + (note->level_diff * (static_cast<float>(note->decay_cnt) / note->decay));
+            if (note->decay_cnt > 0) note->decay_cnt--;
+        }
+        // サステイン
+        else {
+            adsr_gain = note->sustain;
+        }
+        
+        note->adsr_gain = adsr_gain;
+
+        return adsr_gain;
+    }
+
     void generate(int16_t *buffer, size_t size) {
         memset(buffer, 0, sizeof(int16_t) * size); // バッファをクリア
 
         for (uint8_t n = 0; n < MAX_NOTES; ++n) {
             if (!notes[n].active) continue;
             
-            if (waveform != nullptr) {
+            if (osc1_wave != nullptr) {
                 for (size_t i = 0; i < size; i++) {
 
-                    // 基本レベル
-                    float adsr_gain = 0.0f;
-                    
-                    // アタック
-                    if (notes[n].attack_cnt >= 0 && notes[n].attack_cnt < notes[n].attack) {
-                        adsr_gain = static_cast<float>(notes[n].attack_cnt) / notes[n].attack;
-                        notes[n].attack_cnt++;
-                    }
-                    // 強制リリース
-                    else if (notes[n].force_release_cnt >= 0) {
-                        adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].force_release_cnt) / notes[n].force_release);
-                        if (notes[n].force_release_cnt > 0) notes[n].force_release_cnt--;
-                    }
-                    // リリース
-                    else if (notes[n].release_cnt >= 0) {
-                        adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].release_cnt) / notes[n].release);
-                        if (notes[n].release_cnt > 0) notes[n].release_cnt--;
-                    }
-                    // ディケイ
-                    else if (notes[n].decay_cnt >= 0) {
-                        adsr_gain = notes[n].sustain + (notes[n].level_diff * (static_cast<float>(notes[n].decay_cnt) / notes[n].decay));
-                        if (notes[n].decay_cnt > 0) notes[n].decay_cnt--;
-                    }
-                    // サステイン
-                    else {
-                        adsr_gain = notes[n].sustain;
-                    }
-                    
-                    notes[n].adsr_gain = adsr_gain;
+                    // OSC1適用
+                    int16_t osc1 = osc1_wave[(notes[n].phase >> BIT_SHIFT) % SAMPLE_SIZE];
+                    buffer[i] += osc1;
 
-                    int16_t value = waveform[(notes[n].phase >> bit_shift) % sampleSize];
-                    buffer[i] += value * adsr_gain * notes[n].gain;
+                    // OSC2適用
+                    if(osc2_wave != nullptr) {
+                        int16_t osc2 = osc2_wave[(notes[n].phase >> BIT_SHIFT) % SAMPLE_SIZE];
+                        buffer[i] += osc2;
+                    }
+
+                    // ADSRゲイン適用
+                    float adsr_gain = applyEnvelope(&notes[n]);
+                    buffer[i] *= adsr_gain;
+
+                    // ノートゲイン適用
+                    buffer[i] *= notes[n].gain;
+                    
+                    // ピッチ適用
                     notes[n].phase += notes[n].phase_delta;
                 }
             }
 
+            // アタック終了したらディケイへ
             if (notes[n].attack_cnt >= notes[n].attack) {
                 notes[n].attack_cnt = -1;
                 notes[n].decay_cnt = notes[n].decay;
             }
 
+            // リリースが終了
             else if (notes[n].release_cnt == 0 || notes[n].force_release_cnt == 0) {
                 notes[n].release_cnt = -1;
                 notes[n].active = false;
@@ -333,6 +356,7 @@ public:
                 }
             }
 
+            // ディケイが終了
             else if (notes[n].decay_cnt == 0) {
                 notes[n].decay_cnt = -1;
             }
@@ -344,41 +368,37 @@ public:
         }
     }
 
-    void setShape(uint8_t id) {
-        shape = id;
-
-        switch(shape) {
+    void setShape(uint8_t id, uint8_t osc) {
+        switch(id) {
             case 0x00:
-                sampleSize = sizeof(sine) / sizeof(sine[0]);
-                waveform = sine;
+                osc1_wave = sine;
                 break;
             case 0x01:
-                sampleSize = sizeof(triangle) / sizeof(triangle[0]);
-                waveform = triangle;
+                osc1_wave = triangle;
                 break;
             case 0x02:
-                sampleSize = sizeof(saw) / sizeof(saw[0]);
-                waveform = saw;
+                osc1_wave = saw;
                 break;
             case 0x03:
-                sampleSize = sizeof(square) / sizeof(square[0]);
-                waveform = square;
+                osc1_wave = square;
                 break;
         }
+    }
 
-        bit_shift = bitShift(sampleSize);
+    void setCustomShape(uint8_t osc, int16_t *samples) {
+        osc1_wave = samples;
     }
 
     void setAttack(int16_t attack) {
-        attack_sample = static_cast<int32_t>((attack * 0.001) * sample_rate);
+        attack_sample = static_cast<int32_t>((attack * 0.001) * SAMPLE_RATE);
     }
 
     void setRelease(int16_t release) {
-        release_sample = static_cast<int32_t>((release * 0.001) * sample_rate);
+        release_sample = static_cast<int32_t>((release * 0.001) * SAMPLE_RATE);
     }
 
     void setDecay(int16_t decay) {
-        decay_sample = static_cast<int32_t>((decay * 0.001) * sample_rate);
+        decay_sample = static_cast<int32_t>((decay * 0.001) * SAMPLE_RATE);
     }
 
     void setSustain(int16_t sustain) {

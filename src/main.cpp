@@ -82,7 +82,7 @@ void receiveEvent(int bytes) {
         case SYNTH_SET_SHAPE:
             if(bytes < 5) return;
             {
-                wave.setShape(receivedData[4]);
+                wave.setShape(receivedData[4], 0x01);
             }
             break;
 
