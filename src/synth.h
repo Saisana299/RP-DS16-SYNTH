@@ -59,6 +59,8 @@ private:
     // 波形
     int16_t* osc1_wave = sine;
     int16_t* osc2_wave = nullptr;
+    int16_t osc1_cwave[2048];
+    int16_t osc2_cwave[2048];
 
     // ビットシフト
     uint8_t bitShift(size_t tableSize) {
@@ -315,11 +317,15 @@ public:
                     
                     notes[n].adsr_gain = adsr_gain;
 
-                    int16_t value = osc1_wave[(notes[n].phase >> BIT_SHIFT) % SAMPLE_SIZE];
-                    //osc2の処理
+                    int16_t VCO = osc1_wave[(notes[n].phase >> BIT_SHIFT) % SAMPLE_SIZE];
 
-                    // ウェーブ書き込み
-                    buffer[i] += value * adsr_gain * notes[n].gain;
+                    //osc2の処理
+                    if(osc2_wave != nullptr) {
+                        VCO += osc2_wave[(notes[n].phase >> BIT_SHIFT) % SAMPLE_SIZE];
+                    }
+
+                    // ボリューム処理
+                    buffer[i] += VCO * adsr_gain * notes[n].gain;
 
                     // ピッチ適用
                     notes[n].phase += notes[n].phase_delta;
@@ -377,10 +383,6 @@ public:
         }
     }
 
-    void setCustomShape(uint8_t osc, int16_t *samples) {
-        osc1_wave = samples;
-    }
-
     void setAttack(int16_t attack) {
         attack_sample = static_cast<int32_t>((attack * 0.001) * SAMPLE_RATE);
     }
@@ -396,5 +398,16 @@ public:
     void setSustain(int16_t sustain) {
         sustain_level = sustain * 0.001;
         level_diff = 1.0f - sustain_level;
+    }
+
+    void setCustomShape(int16_t *wave, uint8_t osc) {
+        if(osc == 1) {
+            memcpy(osc1_cwave, wave, 2048 * sizeof(int16_t));
+            osc1_wave = osc1_cwave;
+        }
+        else if(osc == 2) {
+            memcpy(osc2_cwave, wave, 2048 * sizeof(int16_t));
+            osc2_wave = osc2_cwave;
+        }
     }
 };

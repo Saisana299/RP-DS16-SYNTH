@@ -4,6 +4,7 @@
 #define DATA_SEPARATE 0x81 // データ区切り
 #define RES_OK        0x82 // 処理正常終了
 #define RES_ERROR     0x83 // エラー発生時
+#define DATA_END      0x84 // データ終了
 
 //// CTRL受信用の命令コード (0x00と0xffは除外) 190~
 //// 例：{0x7F, 0x40, 0x80, 0x01(データサイズ 1~255), 0x04(データ)}
@@ -21,6 +22,7 @@
 #define SYNTH_SET_SUSTAIN 0xC6 // サステインを設定
 #define SYNTH_GET_USED    0xC7 // 鳴っているノート数を取得
 #define SYNTH_IS_NOTE     0xC8 // ノートが存在するか
+#define SYNTH_SET_CSHAPE  0xC9 // カスタムシェイプを設定
 
 //// 共通シンセパン状態コード
 #define LR_PAN_C 0x00

@@ -1,23 +1,34 @@
 import wave
 import numpy as np
 
-filename = "wavetable.wav"
+def wave_to_array(file_path):
+    # waveファイルを開く
+    with wave.open(file_path, 'rb') as wave_file:
+        # チャネル数, サンプル幅, サンプリングレート, フレーム数などを取得
+        n_channels = wave_file.getnchannels()
+        sampwidth = wave_file.getsampwidth()
+        framerate = wave_file.getframerate()
+        n_frames = wave_file.getnframes()
+        
+        # フレームデータを読み込む
+        frames = wave_file.readframes(n_frames)
+        
+        # numpy配列に変換
+        dtype = np.int16 if sampwidth == 2 else np.int32
+        audio_data = np.frombuffer(frames, dtype=dtype)
+        
+        # マルチチャネルの場合、チャネルごとに分ける
+        if n_channels > 1:
+            audio_data = audio_data.reshape(-1, n_channels)
+    
+    return audio_data
 
-def read_and_normalize_wave(filename):
-    """Read a wave file and normalize its data to fit in the range -16383 to 16384."""
-    with wave.open(filename, 'r') as wav_file:
-        # Read the wave file data
-        nframes = wav_file.getnframes()
-        data = wav_file.readframes(nframes)
-        # Convert to numpy array and normalize
-        wave_data = np.frombuffer(data, dtype=np.float32)
-        normalized_data = np.int16(wave_data * 16384)
-    return normalized_data
+file_path = 'wavetable.wav'
+audio_array = wave_to_array(file_path)
 
-# Read and normalize the wave file data
-normalized_wave_data = read_and_normalize_wave(filename)
+# 配列の要素数をコンソールに出力
+element_count = audio_array.size
+print(f"Element Count: {element_count}")
 
-comma_separated_str = ", ".join(map(str, normalized_wave_data))
-print(comma_separated_str)
-
-#[-16383, 16384]
+np.set_printoptions(threshold=np.inf)
+print(",".join(map(str, audio_array.flatten())))

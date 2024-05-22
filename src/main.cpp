@@ -35,7 +35,11 @@ I2S i2s(OUTPUT);
 WaveGenerator wave(48000);
 int16_t buffer[BUFFER_SIZE];
 uint8_t LRMode = LR_PAN_C;
+float pan = 0.5;
 bool isLed = false;
+
+uint16_t buff_i = 0;
+int16_t cshape_buff[2048];
 
 uint8_t response = 0x00;
 
@@ -153,6 +157,25 @@ void receiveEvent(int bytes) {
         case SYNTH_IS_NOTE:
             if(wave.isNote(receivedData[2])) response = 0x01;
             else response = 0x00;
+            break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_CSHAPE, DATA_BEGIN, 0x01, 0x02, WAVE_DATA...}
+        case SYNTH_SET_CSHAPE:
+            if(bytes < 30) return;
+            {
+                for(uint16_t i = 0; i < 30; i++) {
+                    if(i < 6) continue;
+                    if(buff_i == 2048) {
+                        wave.setCustomShape(cshape_buff, receivedData[5]);
+                        buff_i = 0;
+                        break;
+                    }
+                    if(buff_i == 0) memset(cshape_buff, 0, 2048 * sizeof(int16_t));
+                    cshape_buff[buff_i] = static_cast<int16_t>((receivedData[i+1] << 8) | receivedData[i]);
+                    i++;
+                    buff_i++;
+                }
+            }
             break;
     }
 }
