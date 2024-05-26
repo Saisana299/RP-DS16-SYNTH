@@ -35,7 +35,6 @@ I2S i2s(OUTPUT);
 WaveGenerator wave(48000);
 int16_t buffer[BUFFER_SIZE];
 uint8_t LRMode = LR_PAN_C;
-float pan = 0.5;
 bool isLed = false;
 
 uint16_t buff_i = 0;
@@ -186,6 +185,7 @@ void requestEvent() {
 }
 
 void setup() {
+
     i2c.setSDA(SDA_PIN);
     i2c.setSCL(SCL_PIN);
     i2c.begin(I2C_ADDR);

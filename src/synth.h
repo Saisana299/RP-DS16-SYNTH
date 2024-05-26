@@ -7,8 +7,8 @@ private:
     // 定数
     static const int MAX_NOTES = 4;
     static const int MAX_VOICE = 16;
+    static const size_t SAMPLE_SIZE = 2048;
     const int32_t SAMPLE_RATE;
-    const size_t SAMPLE_SIZE = 2048;
     const uint8_t BIT_SHIFT = bitShift(SAMPLE_SIZE);
     const double WHOLETONE = pow(2.0, 2.0 / 12.0) - 1.0;
 
@@ -22,13 +22,13 @@ private:
         int8_t actnum;
 
         uint8_t note;
-        float gain;
-        float adsr_gain;
-        float note_off_gain;
+        int32_t gain;
+        int32_t adsr_gain;
+        int32_t note_off_gain;
 
         // ADSRはノート毎に設定します
-        float level_diff;
-        float sustain;
+        int32_t level_diff;
+        int32_t sustain;
         int32_t attack;
         int32_t decay;
         int32_t release;
@@ -49,29 +49,29 @@ private:
     Note notes[MAX_NOTES];
     NoteCache cache[MAX_NOTES];
 
-    float volume_gain = 1.0f;
+    int16_t volume_gain = 1000; // 1.0 = 100
 
     // ADSRの定義
-    float sustain_level = 1.0f;
-    float level_diff = 0.0f;
-    int32_t attack_sample = static_cast<int32_t>((1.0 * 0.001) * SAMPLE_RATE);
-    int32_t decay_sample = static_cast<int32_t>((1000.0 * 0.001) * SAMPLE_RATE);
-    int32_t release_sample = static_cast<int32_t>((1.0 * 0.001) * SAMPLE_RATE);
+    int16_t sustain_level = 1000; // 1.0 = 1000
+    int16_t level_diff = 0; // 1.0 = 1000
+    int32_t attack_sample = (1 * SAMPLE_RATE) / 1000;
+    int32_t decay_sample = (1000 * SAMPLE_RATE) / 1000;
+    int32_t release_sample = (1 * SAMPLE_RATE) / 1000;
 
     // 強制リリース
-    int32_t force_release_sample = static_cast<int32_t>((1.0 * 0.001) * SAMPLE_RATE);
+    int32_t force_release_sample = (1 * SAMPLE_RATE) / 1000;
 
     // 波形
     int16_t* osc1_wave = sine;
     int16_t* osc2_wave = nullptr;
-    int16_t osc1_cwave[2048];
-    int16_t osc2_cwave[2048];
+    int16_t osc1_cwave[SAMPLE_SIZE];
+    int16_t osc2_cwave[SAMPLE_SIZE];
 
     // OSCパラメータ
-    uint8_t osc1_voice = 4; // MAX16
+    uint8_t osc1_voice = 8; // MAX16
     uint8_t osc2_voice = 1;
-    float osc1_detune = 0.2f; // 0.0f - 1.0f
-    float osc2_detune = 0.2f;
+    float  osc1_detune = 0.5f;
+    float  osc2_detune = 0.2f;
 
     // ビットシフト
     uint8_t bitShift(size_t tableSize) {
@@ -182,8 +182,8 @@ private:
 
     void resetPhase(int8_t noteIndex) {
         for(uint8_t i = 0; i < MAX_VOICE; i++) {
-            notes[noteIndex].osc1_phase[i] = 0;
-            notes[noteIndex].osc2_phase[i] = 0;
+            notes[noteIndex].osc1_phase[i] = rand();
+            notes[noteIndex].osc2_phase[i] = rand();
         }
     }
 
@@ -267,7 +267,7 @@ public:
         notes[i].release_cnt = -1;
         notes[i].force_release_cnt = -1;
         notes[i].note = note;
-        notes[i].gain = (volume_gain / MAX_NOTES) * ((float)velocity / 127.0f);
+        notes[i].gain = ((volume_gain / MAX_NOTES) * ((velocity * 1000) / 127)) / 1000;
 
         if(isCache) updateActNumOn(i);
 
@@ -312,9 +312,9 @@ public:
             notes[i].active = false;
             notes[i].actnum = -1;
             notes[i].note = 0xff;
-            notes[i].gain = 0.0f;
-            notes[i].adsr_gain = 0.0f;
-            notes[i].note_off_gain = 0.0f;
+            notes[i].gain = 0;
+            notes[i].adsr_gain = 0;
+            notes[i].note_off_gain = 0;
             notes[i].attack_cnt = -1;
             notes[i].decay_cnt = -1;
             notes[i].release_cnt = -1;
@@ -329,7 +329,10 @@ public:
     }
 
     void generate(int16_t *buffer, size_t size) {
-        memset(buffer, 0, sizeof(int16_t) * size); // バッファをクリア
+
+        for (size_t i = 0; i < size; i++) {
+            buffer[i] = 0; // バッファ初期化
+        }
 
         for (uint8_t n = 0; n < MAX_NOTES; ++n) {
             if (!notes[n].active) continue;
@@ -338,26 +341,26 @@ public:
                 for (size_t i = 0; i < size; i++) {
 
                     // 基本レベル
-                    float adsr_gain = 0.0f;
+                    float adsr_gain = 0;
                     
                     // アタック
                     if (notes[n].attack_cnt >= 0 && notes[n].attack_cnt < notes[n].attack) {
-                        adsr_gain = static_cast<float>(notes[n].attack_cnt) / notes[n].attack;
+                        adsr_gain = (notes[n].attack_cnt * 1000) / notes[n].attack;
                         notes[n].attack_cnt++;
                     }
                     // 強制リリース
                     else if (notes[n].force_release_cnt >= 0) {
-                        adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].force_release_cnt) / notes[n].force_release);
+                        adsr_gain = (notes[n].note_off_gain * notes[n].force_release_cnt) / notes[n].force_release;
                         if (notes[n].force_release_cnt > 0) notes[n].force_release_cnt--;
                     }
                     // リリース
                     else if (notes[n].release_cnt >= 0) {
-                        adsr_gain = notes[n].note_off_gain * (static_cast<float>(notes[n].release_cnt) / notes[n].release);
+                        adsr_gain = (notes[n].note_off_gain * notes[n].release_cnt) / notes[n].release;
                         if (notes[n].release_cnt > 0) notes[n].release_cnt--;
                     }
                     // ディケイ
                     else if (notes[n].decay_cnt >= 0) {
-                        adsr_gain = notes[n].sustain + (notes[n].level_diff * (static_cast<float>(notes[n].decay_cnt) / notes[n].decay));
+                        adsr_gain = notes[n].sustain + (notes[n].level_diff * notes[n].decay_cnt) / notes[n].decay;
                         if (notes[n].decay_cnt > 0) notes[n].decay_cnt--;
                     }
                     // サステイン
@@ -371,27 +374,27 @@ public:
 
                     // OSC1の処理
                     if(osc1_voice == 1) {
-                        VCO += osc1_wave[(notes[n].osc1_phase[0] >> BIT_SHIFT) % SAMPLE_SIZE];
+                        VCO += osc1_wave[(notes[n].osc1_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
                     }
                     else {
                         for(uint8_t d = 0; d < osc1_voice; d++) {
-                            VCO += osc1_wave[(notes[n].osc1_phase[d] >> BIT_SHIFT) % SAMPLE_SIZE] * (1.0f / osc1_voice);
+                            VCO += (osc1_wave[(notes[n].osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)]) / osc1_voice;
                         }
                     }
                     // OSC2の処理
                     if(osc2_wave != nullptr) {
                         if(osc2_voice == 1) {
-                            VCO += osc2_wave[(notes[n].osc2_phase[0] >> BIT_SHIFT) % SAMPLE_SIZE];
+                            VCO += osc2_wave[(notes[n].osc2_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
                         }
                         else {
                             for(uint8_t d = 0; d < osc2_voice; d++) {
-                                VCO += osc2_wave[(notes[n].osc2_phase[d] >> BIT_SHIFT) % SAMPLE_SIZE] * (1.0f / osc2_voice);
+                                VCO += (osc2_wave[(notes[n].osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)]) / osc2_voice;
                             }
                         }
                     }
 
                     // ボリューム処理
-                    buffer[i] += VCO * adsr_gain * notes[n].gain;
+                    buffer[i] += (VCO * adsr_gain * notes[n].gain) / (1000 * 1000);
 
                     // OSC1 次の位相へ
                     if(osc1_voice == 1) {
@@ -425,7 +428,7 @@ public:
                 notes[n].release_cnt = -1;
                 notes[n].active = false;
                 notes[n].note = 0xff;
-                notes[n].gain = 0.0f;
+                notes[n].gain = 0;
 
                 updateActNumOff(n); // 更新してから-1にする
                 notes[n].actnum = -1;
@@ -466,20 +469,20 @@ public:
     }
 
     void setAttack(int16_t attack) {
-        attack_sample = static_cast<int32_t>((attack * 0.001) * SAMPLE_RATE);
+        attack_sample = (attack * SAMPLE_RATE) / 1000;
     }
 
     void setRelease(int16_t release) {
-        release_sample = static_cast<int32_t>((release * 0.001) * SAMPLE_RATE);
+        release_sample = (release * SAMPLE_RATE) / 1000;
     }
 
     void setDecay(int16_t decay) {
-        decay_sample = static_cast<int32_t>((decay * 0.001) * SAMPLE_RATE);
+        decay_sample = (decay * SAMPLE_RATE) / 1000;
     }
 
     void setSustain(int16_t sustain) {
-        sustain_level = sustain * 0.001;
-        level_diff = 1.0f - sustain_level;
+        sustain_level = (sustain * 1000) / 1000;
+        level_diff = 1000 - sustain_level;
     }
 
     void setCustomShape(int16_t *wave, uint8_t osc) {
