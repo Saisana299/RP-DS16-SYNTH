@@ -6,7 +6,7 @@ private:
 
     // 定数
     static const int MAX_NOTES = 4;
-    static const int MAX_VOICE = 16;
+    static const int MAX_VOICE = 8;
     static const size_t SAMPLE_SIZE = 2048;
     const int32_t SAMPLE_RATE;
     const uint8_t BIT_SHIFT = bitShift(SAMPLE_SIZE);
@@ -68,7 +68,7 @@ private:
     int16_t osc2_cwave[SAMPLE_SIZE];
 
     // OSCパラメータ
-    uint8_t osc1_voice = 7; // MAX16
+    uint8_t osc1_voice = 1; // 総ボイス数8まで
     uint8_t osc2_voice = 1;
     float  osc1_detune = 0.2f;
     float  osc2_detune = 0.2f;
@@ -181,7 +181,9 @@ private:
     }
 
     void resetPhase(int8_t noteIndex) {
-        for(uint8_t i = 0; i < MAX_VOICE; i++) {
+        notes[noteIndex].osc1_phase[0] = 0;
+        notes[noteIndex].osc2_phase[0] = 0;
+        for(uint8_t i = 1; i < MAX_VOICE; i++) {
             notes[noteIndex].osc1_phase[i] = rand();
             notes[noteIndex].osc2_phase[i] = rand();
         }
