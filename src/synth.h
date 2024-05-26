@@ -68,9 +68,9 @@ private:
     int16_t osc2_cwave[SAMPLE_SIZE];
 
     // OSCパラメータ
-    uint8_t osc1_voice = 8; // MAX16
+    uint8_t osc1_voice = 7; // MAX16
     uint8_t osc2_voice = 1;
-    float  osc1_detune = 0.5f;
+    float  osc1_detune = 0.2f;
     float  osc2_detune = 0.2f;
 
     // ビットシフト
@@ -330,18 +330,27 @@ public:
 
     void generate(int16_t *buffer, size_t size) {
 
-        for (size_t i = 0; i < size; i++) {
-            buffer[i] = 0; // バッファ初期化
-        }
+        // バッファ初期化
+        memset(buffer, 0, size * sizeof(int16_t));
 
         for (uint8_t n = 0; n < MAX_NOTES; ++n) {
             if (!notes[n].active) continue;
+
+            // 変数の事前キャッシュ
+            int16_t* osc1_wave_ptr = osc1_wave;
+            int16_t* osc2_wave_ptr = osc2_wave;
+            uint8_t osc1_v = osc1_voice;
+            uint8_t osc2_v = osc2_voice;
+            uint32_t* osc1_phase = notes[n].osc1_phase;
+            uint32_t* osc2_phase = notes[n].osc2_phase;
+            uint32_t* osc1_phase_delta = notes[n].osc1_phase_delta;
+            uint32_t* osc2_phase_delta = notes[n].osc2_phase_delta;
             
-            if (osc1_wave != nullptr) {
+            if (osc1_wave_ptr != nullptr) {
                 for (size_t i = 0; i < size; i++) {
 
                     // 基本レベル
-                    float adsr_gain = 0;
+                    int32_t adsr_gain = 0;
                     
                     // アタック
                     if (notes[n].attack_cnt >= 0 && notes[n].attack_cnt < notes[n].attack) {
@@ -373,45 +382,46 @@ public:
                     int16_t VCO = 0;
 
                     // OSC1の処理
-                    if(osc1_voice == 1) {
-                        VCO += osc1_wave[(notes[n].osc1_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
+                    if(osc1_v == 1) {
+                        VCO += osc1_wave_ptr[(osc1_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
                     }
                     else {
-                        for(uint8_t d = 0; d < osc1_voice; d++) {
-                            VCO += (osc1_wave[(notes[n].osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)]) / osc1_voice;
+                        for(uint8_t d = 0; d < osc1_v; d++) {
+                            VCO += (osc1_wave_ptr[(osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)]) / osc1_v;
                         }
                     }
                     // OSC2の処理
-                    if(osc2_wave != nullptr) {
-                        if(osc2_voice == 1) {
-                            VCO += osc2_wave[(notes[n].osc2_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
+                    if(osc2_wave_ptr != nullptr) {
+                        if(osc2_v == 1) {
+                            VCO += osc2_wave_ptr[(osc2_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
                         }
                         else {
-                            for(uint8_t d = 0; d < osc2_voice; d++) {
-                                VCO += (osc2_wave[(notes[n].osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)]) / osc2_voice;
+                            for(uint8_t d = 0; d < osc2_v; d++) {
+                                VCO += (osc2_wave_ptr[(osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)]) / osc2_v;
                             }
                         }
                     }
 
                     // ボリューム処理
-                    buffer[i] += (VCO * adsr_gain * notes[n].gain) / (1000 * 1000);
+                    buffer[i] += (VCO * (float)adsr_gain * notes[n].gain) / 1000000;
+                    //todo: float
 
                     // OSC1 次の位相へ
-                    if(osc1_voice == 1) {
-                        notes[n].osc1_phase[0] += notes[n].osc1_phase_delta[0];
+                    if(osc1_v == 1) {
+                        osc1_phase[0] += osc1_phase_delta[0];
                     }
                     else {
-                        for(uint8_t d = 0; d < osc1_voice; d++) {
-                            notes[n].osc1_phase[d] += notes[n].osc1_phase_delta[d];
+                        for(uint8_t d = 0; d < osc1_v; d++) {
+                            osc1_phase[d] += osc1_phase_delta[d];
                         }
                     }
                     // OSC2 次の位相へ
-                    if(osc2_voice == 1) {
-                        notes[n].osc2_phase[0] += notes[n].osc2_phase_delta[0];
+                    if(osc2_v == 1) {
+                        osc2_phase[0] += osc2_phase_delta[0];
                     }
                     else {
-                        for(uint8_t d = 0; d < osc2_voice; d++) {
-                            notes[n].osc2_phase[d] += notes[n].osc2_phase_delta[d];
+                        for(uint8_t d = 0; d < osc2_v; d++) {
+                            osc2_phase[d] += osc2_phase_delta[d];
                         }
                     }
                 }
@@ -443,11 +453,6 @@ public:
             else if (notes[n].decay_cnt == 0) {
                 notes[n].decay_cnt = -1;
             }
-        }
-
-        // 必要に応じてバッファの正規化
-        for (size_t i = 0; i < size; i++) {
-            buffer[i] = constrain(buffer[i], INT16_MIN, INT16_MAX);
         }
     }
 
