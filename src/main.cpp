@@ -176,6 +176,22 @@ void receiveEvent(int bytes) {
                 }
             }
             break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_VOICE, DATA_BEGIN, 0x02, 0x01, 0x01}
+        case SYNTH_SET_VOICE:
+            if(bytes < 6) return;
+            {
+                wave.setVoice(receivedData[4], receivedData[5]);
+            }
+            break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_DETUNE, DATA_BEGIN, 0x02, 0xA2, 0x01}
+        case SYNTH_SET_DETUNE:
+            if(bytes < 6) return;
+            {
+                wave.setDetune(receivedData[4], receivedData[5]);
+            }
+            break;
     }
 }
 

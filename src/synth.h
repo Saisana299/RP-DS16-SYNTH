@@ -10,7 +10,8 @@ private:
     static const size_t SAMPLE_SIZE = 2048;
     const int32_t SAMPLE_RATE;
     const uint8_t BIT_SHIFT = bitShift(SAMPLE_SIZE);
-    const double WHOLETONE = pow(2.0, 2.0 / 12.0) - 1.0;
+    const double HALFTONE = pow(2.0, 1.0 / 12.0) - 1.0;
+    const uint16_t DIVIDE_FIXED[7] = {200, 300, 380, 460, 540, 620, 700};
 
     struct Note {
         uint32_t osc1_phase[MAX_VOICE];
@@ -96,7 +97,7 @@ private:
             else {
                 for(uint8_t d = 0; d < osc1_voice; d++) {
                     const auto pos = lerp(-1.0, 1.0, 1.0 * d / (osc1_voice - 1));
-                    float detuneFactor = static_cast<float>(1.0 + WHOLETONE * osc1_detune * pos);
+                    float detuneFactor = static_cast<float>(1.0 + HALFTONE * osc1_detune * pos);
                     notes[noteIndex].osc1_phase_delta[d] = (frequency * detuneFactor) * (float)(1ULL << 32) / SAMPLE_RATE;
                 }
             }
@@ -107,7 +108,7 @@ private:
             else {
                 for(uint8_t d = 0; d < osc2_voice; d++) {
                     const auto pos = lerp(-1.0, 1.0, 1.0 * d / (osc2_voice - 1));
-                    float detuneFactor = static_cast<float>(1.0 + WHOLETONE * osc2_detune * pos);
+                    float detuneFactor = static_cast<float>(1.0 + HALFTONE * osc2_detune * pos);
                     notes[noteIndex].osc2_phase_delta[d] = (frequency * detuneFactor) * (float)(1ULL << 32) / SAMPLE_RATE;
                 }
             }
@@ -389,7 +390,7 @@ public:
                     }
                     else {
                         for(uint8_t d = 0; d < osc1_v; d++) {
-                            VCO += (osc1_wave_ptr[(osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)]) / osc1_v;
+                            VCO += ((osc1_wave_ptr[(osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc1_v - 2];
                         }
                     }
                     // OSC2の処理
@@ -399,14 +400,13 @@ public:
                         }
                         else {
                             for(uint8_t d = 0; d < osc2_v; d++) {
-                                VCO += (osc2_wave_ptr[(osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)]) / osc2_v;
+                                VCO += ((osc2_wave_ptr[(osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc2_v - 2];
                             }
                         }
                     }
 
                     // ボリューム処理
-                    buffer[i] += (VCO * (float)adsr_gain * notes[n].gain) / 1000000;
-                    //todo: float
+                    buffer[i] += (((VCO * adsr_gain) / 1000) * notes[n].gain) / 1000;
 
                     // OSC1 次の位相へ
                     if(osc1_v == 1) {
@@ -490,6 +490,24 @@ public:
     void setSustain(int16_t sustain) {
         sustain_level = (sustain * 1000) / 1000;
         level_diff = 1000 - sustain_level;
+    }
+
+    void setVoice(uint8_t voice, uint8_t osc) {
+        if(osc == 1) {
+            osc1_voice = voice;
+        }
+        else if(osc == 2) {
+            osc2_voice = voice;
+        }
+    }
+
+    void setDetune(uint8_t detune, uint8_t osc) {
+        if(osc == 1) {
+            osc1_detune = detune / 100.0f;
+        }
+        else if(osc == 2) {
+            osc2_detune = detune / 100.0f;
+        }
     }
 
     void setCustomShape(int16_t *wave, uint8_t osc) {
