@@ -3,7 +3,6 @@
 #include <Wire.h>
 #include <synth.h>
 #include <instruction_set.h>
-#include <wokwi.h>
 
 // SynthIDを選択
 #define SYNTH_ID 2 // 2 or 2
@@ -225,16 +224,6 @@ void setup() {
 
 void loop() {
     while (1) {
-
-        #if WOKWI_MODE == 1
-            delay(10);
-            if(isLed) {
-                digitalWrite(LED_BUILTIN, HIGH);
-            } else {
-                digitalWrite(LED_BUILTIN, LOW);
-            }
-        #endif
-
         if (wave.getActiveNote() != 0) {
             static size_t buffer_index = 0;
 
@@ -256,7 +245,6 @@ void loop() {
     }
 }
 
-#if WOKWI_MODE != 1
 void loop1() {
     while(1) {
         if(isLed) {
@@ -267,4 +255,3 @@ void loop1() {
         wave.calculate();
     }
 }
-#endif
