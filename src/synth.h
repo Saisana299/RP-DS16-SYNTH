@@ -4,6 +4,7 @@
 #define CALC_IDLE  0x00
 #define CALC_ADSR  0x01
 #define CALC_PHASE 0x02
+#define CALC_SET_F 0x03
 
 class WaveGenerator {
 private:
@@ -16,10 +17,36 @@ private:
     const uint8_t BIT_SHIFT = bitShift(SAMPLE_SIZE);
     const double HALFTONE = pow(2.0, 1.0 / 12.0) - 1.0;
     const uint16_t DIVIDE_FIXED[7] = {200, 300, 380, 460, 540, 620, 710};
+    const int16_t SIN_TABLE[101] = {
+        0, 514, 1029, 1543, 2057, 2570, 3083, 3595, 4106, 4616,
+        5125, 5633, 6139, 6644, 7147, 7649, 8148, 8646, 9141, 9634,
+        10125, 10613, 11099, 11582, 12062, 12539, 13013, 13484, 13951, 14415,
+        14875, 15332, 15785, 16234, 16679, 17120, 17557, 17989, 18417, 18841,
+        19259, 19673, 20083, 20487, 20886, 21280, 21669, 22052, 22430, 22802,
+        23169, 23530, 23886, 24235, 24578, 24916, 25247, 25572, 25891, 26203,
+        26509, 26808, 27100, 27386, 27666, 27938, 28203, 28462, 28713, 28958,
+        29195, 29425, 29648, 29863, 30072, 30272, 30465, 30651, 30829, 31000,
+        31163, 31318, 31465, 31605, 31737, 31861, 31977, 32086, 32186, 32279,
+        32363, 32440, 32508, 32569, 32621, 32665, 32702, 32730, 32750, 32762, 32767
+    };
+    const int16_t COS_TABLE[101] = {
+        32767, 32762, 32750, 32730, 32702, 32665, 32621, 32569, 32508, 32440,
+        32363, 32279, 32186, 32086, 31977, 31861, 31737, 31605, 31465, 31318,
+        31163, 31000, 30829, 30651, 30465, 30272, 30072, 29863, 29648, 29425,
+        29195, 28958, 28713, 28462, 28203, 27938, 27666, 27386, 27100, 26808,
+        26509, 26203, 25891, 25572, 25247, 24916, 24578, 24235, 23886, 23530,
+        23169, 22802, 22430, 22052, 21669, 21280, 20886, 20487, 20083, 19673,
+        19259, 18841, 18417, 17989, 17557, 17120, 16679, 16234, 15785, 15332,
+        14875, 14415, 13951, 13484, 13013, 12539, 12062, 11582, 11099, 10613,
+        10125, 9634, 9141, 8646, 8148, 7649, 7147, 6644, 6139, 5633,
+        5125, 4616, 4106, 3595, 3083, 2570, 2057, 1543, 1029, 514, 0
+    };
 
     // コア1制御用
     volatile uint8_t calc_mode = CALC_IDLE;
     volatile uint8_t calc_n = 0x00;
+    volatile int8_t calc_i = 0x00;
+    volatile uint8_t calc_note = 0x00;
 
     struct Note {
         uint32_t osc1_phase[MAX_VOICE];
@@ -59,6 +86,8 @@ private:
     NoteCache cache[MAX_NOTES];
 
     int16_t volume_gain = 1000; // 1.0 = 100
+
+    uint8_t pan = 50; // 0=L, 50=C, 100=R
 
     // ADSRの定義
     int16_t sustain_level = 1000; // 1.0 = 1000
@@ -260,7 +289,10 @@ public:
             return;
         }
 
-        setFrequency(i, midiNoteToFrequency(note));
+        // core1でフェーズ計算
+        /*core1*/ calc_i = i;
+        /*core1*/ calc_note = note;
+        /*core1*/ calc_mode = CALC_SET_F;
 
         notes[i].attack_cnt = 0;
 
@@ -291,6 +323,9 @@ public:
         if(newActNum >= 4) newActNum = 3;
         else if(newActNum == -1) newActNum = 0;
         notes[i].actnum = newActNum;
+
+        // core1を待つ
+        while(calc_mode == CALC_PHASE);
 
         notes[i].active = true;
     }
@@ -339,10 +374,11 @@ public:
         }
     }
 
-    void generate(int16_t *buffer, size_t size) {
+    void generate(int16_t *buffer_L, int16_t *buffer_R, size_t size) {
 
         // バッファ初期化
-        memset(buffer, 0, size * sizeof(int16_t));
+        memset(buffer_L, 0, size * sizeof(int16_t));
+        memset(buffer_R, 0, size * sizeof(int16_t));
 
         for (uint8_t n = 0; n < MAX_NOTES; ++n) {
             if (!notes[n].active) continue;
@@ -393,7 +429,11 @@ public:
                     /*core1*/ calc_mode = CALC_PHASE;
 
                     // ボリューム処理 + core1で同時にフェーズ計算
-                    buffer[i] += (((VCO * notes[n].adsr_gain) / 1000) * notes[n].gain) / 1000;
+                    int16_t sample = (((VCO * notes[n].adsr_gain) / 1000) * notes[n].gain) / 1000;
+
+                    // パン処理
+                    buffer_L[i] += (sample * COS_TABLE[pan]) / INT16_MAX;
+                    buffer_R[i] += (sample * SIN_TABLE[pan]) / INT16_MAX;
 
                     // core1を待つ
                     while(calc_mode == CALC_PHASE);
@@ -562,6 +602,11 @@ public:
                 }
             }
 
+            calc_mode = CALC_IDLE;
+        }
+
+        else if(calc_mode == CALC_SET_F) {
+            setFrequency(calc_i, midiNoteToFrequency(calc_note));
             calc_mode = CALC_IDLE;
         }
     }

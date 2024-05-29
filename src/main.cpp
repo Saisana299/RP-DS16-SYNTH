@@ -6,7 +6,7 @@
 #include <wokwi.h>
 
 // SynthIDを選択
-#define SYNTH_ID 1 // 2 or 2
+#define SYNTH_ID 2 // 2 or 2
 
 // CTRL 関連
 #if SYNTH_ID == 1
@@ -33,8 +33,9 @@ I2S i2s(OUTPUT);
 
 // その他
 WaveGenerator wave(48000);
-int16_t buffer[BUFFER_SIZE];
-uint8_t LRMode = LR_PAN_C;
+int16_t buffer_L[BUFFER_SIZE];
+int16_t buffer_R[BUFFER_SIZE];
+
 bool isLed = false;
 
 uint16_t buff_i = 0;
@@ -100,13 +101,13 @@ void receiveEvent(int bytes) {
         case SYNTH_SET_PAN:
             if(bytes < 5) return;
             if(receivedData[4] == 0x00){
-                LRMode = LR_PAN_C;
+                //
             }
             else if(receivedData[4] == 0x01){
-                LRMode = LR_PAN_L;
+                //
             }
             else if(receivedData[4] == 0x02){
-                LRMode = LR_PAN_R;
+                //
             }
             break;
 
@@ -239,23 +240,13 @@ void loop() {
 
             isLed = true;
             if (buffer_index == BUFFER_SIZE) {
-                wave.generate(buffer, BUFFER_SIZE);
+                wave.generate(buffer_L, buffer_R, BUFFER_SIZE);
                 buffer_index = 0;
             }
 
             while (buffer_index < BUFFER_SIZE) {
-                if(LRMode == LR_PAN_C){
-                    i2s.write(buffer[buffer_index]);  // L
-                    i2s.write(buffer[buffer_index]);  // R
-                }
-                else if(LRMode == LR_PAN_L){
-                    i2s.write(buffer[buffer_index]);  // L
-                    i2s.write(static_cast<int16_t>(0));  // R
-                }
-                else if(LRMode == LR_PAN_R){
-                    i2s.write(static_cast<int16_t>(0));  // L
-                    i2s.write(buffer[buffer_index]);  // R
-                }
+                i2s.write(buffer_L[buffer_index]);  // L
+                i2s.write(buffer_R[buffer_index]);  // R
                 buffer_index++;
             }
 
