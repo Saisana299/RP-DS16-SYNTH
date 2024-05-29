@@ -6,7 +6,7 @@
 #include <wokwi.h>
 
 // SynthIDを選択
-#define SYNTH_ID 2 // 1 or 2
+#define SYNTH_ID 1 // 2 or 2
 
 // CTRL 関連
 #if SYNTH_ID == 1
@@ -267,12 +267,13 @@ void loop() {
 
 #if WOKWI_MODE != 1
 void loop1() {
-    while (1) {
+    while(1) {
         if(isLed) {
             digitalWrite(LED_BUILTIN, HIGH);
         } else {
             digitalWrite(LED_BUILTIN, LOW);
         }
+        wave.calculate();
     }
 }
 #endif
