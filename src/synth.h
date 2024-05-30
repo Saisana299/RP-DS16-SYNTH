@@ -6,6 +6,10 @@
 #define CALC_PHASE 0x02
 #define CALC_SET_F 0x03
 
+#define FIXED_SHIFT 16
+#define FIXED_ONE (1 << FIXED_SHIFT)
+#define PI_4 ((int32_t)(M_PI_4 * FIXED_ONE))
+
 class WaveGenerator {
 private:
 
@@ -41,6 +45,7 @@ private:
         10125, 9634, 9141, 8646, 8148, 7649, 7147, 6644, 6139, 5633,
         5125, 4616, 4106, 3595, 3083, 2570, 2057, 1543, 1029, 514, 0
     };
+    int32_t spread_pan[101][MAX_VOICE][2]; // [spread][voice][cos|sin]
 
     // コア1制御用
     volatile uint8_t calc_mode = CALC_IDLE;
@@ -108,8 +113,10 @@ private:
     // OSCパラメータ
     volatile uint8_t osc1_voice = 1; // 総ボイス数8まで
     volatile uint8_t osc2_voice = 1;
-    float  osc1_detune = 0.2f;
-    float  osc2_detune = 0.2f;
+    float osc1_detune = 0.2f;
+    float osc2_detune = 0.2f;
+    uint8_t osc1_spread = 50; // MAX100
+    uint8_t osc2_spread = 50;
 
     // ビットシフト
     uint8_t bitShift(size_t tableSize) {
@@ -154,6 +161,25 @@ private:
 
     float midiNoteToFrequency(uint8_t midiNote) {
         return 440.0 * pow(2.0, (midiNote - 69) / 12.0);
+    }
+
+    /*初期化時に処理*/
+    void initSpreadPan() {
+        for (uint8_t spread = 0; spread <= 100; ++spread) {
+            for (uint8_t d = 0; d < MAX_VOICE; ++d) {
+                if (spread == 0) {
+                    // モノラルの場合
+                    spread_pan[spread][d][0] = FIXED_ONE; // cos(0)
+                    spread_pan[spread][d][1] = 0;         // sin(0)
+                } else {
+                    // ステレオパンの場合
+                    int32_t detunePos = ((2 * FIXED_ONE * d) / (MAX_VOICE - 1)) - FIXED_ONE; // -FIXED_ONE から FIXED_ONE の範囲
+                    int32_t unisonAngle = (detunePos * PI_4 * spread) / 100;
+                    spread_pan[spread][d][0] = (int32_t)(cos(unisonAngle / (double)FIXED_ONE) * FIXED_ONE); // X = cos
+                    spread_pan[spread][d][1] = (int32_t)(sin(unisonAngle / (double)FIXED_ONE) * FIXED_ONE); // Y = sin
+                }
+            }
+        }
     }
 
     int8_t getOldNote() {
@@ -242,6 +268,7 @@ public:
             cache[i].note = 0;
             cache[i].velocity = 0;
         }
+        initSpreadPan();
     }
 
     uint8_t getActiveNote() {
@@ -398,25 +425,34 @@ public:
                     /*core1*/ calc_n = n;
                     /*core1*/ calc_mode = CALC_ADSR;
 
-                    int16_t VCO = 0;
+                    int16_t VCO_L = 0;
+                    int16_t VCO_R = 0;
 
                     // OSC1の処理 + core1で同時にADSR計算
                     if(osc1_v == 1) {
-                        VCO += osc1_wave_ptr[(osc1_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
+                        int16_t VCO = osc1_wave_ptr[(osc1_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
+                        VCO_L += VCO;
+                        VCO_R += VCO;
                     }
                     else {
                         for(uint8_t d = 0; d < osc1_v; d++) {
-                            VCO += ((osc1_wave_ptr[(osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc1_v - 2];
+                            int16_t VCO = ((osc1_wave_ptr[(osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc1_v - 2];
+                            VCO_L += (VCO * spread_pan[osc1_spread][d][0]) >> FIXED_SHIFT; // cos
+                            VCO_R += (VCO * spread_pan[osc1_spread][d][1]) >> FIXED_SHIFT; // sin
                         }
                     }
                     // OSC2の処理 + core1で同時にADSR計算
                     if(osc2_wave_ptr != nullptr) {
                         if(osc2_v == 1) {
-                            VCO += osc2_wave_ptr[(osc2_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
+                            int16_t VCO = osc2_wave_ptr[(osc2_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
+                            VCO_L += VCO;
+                            VCO_R += VCO;
                         }
                         else {
                             for(uint8_t d = 0; d < osc2_v; d++) {
-                                VCO += ((osc2_wave_ptr[(osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc2_v - 2];
+                                int16_t VCO = ((osc2_wave_ptr[(osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc2_v - 2];
+                                VCO_L += (VCO * spread_pan[osc2_spread][d][0]) >> FIXED_SHIFT; // cos
+                                VCO_R += (VCO * spread_pan[osc2_spread][d][1]) >> FIXED_SHIFT; // sin
                             }
                         }
                     }
@@ -429,11 +465,12 @@ public:
                     /*core1*/ calc_mode = CALC_PHASE;
 
                     // ボリューム処理 + core1で同時にフェーズ計算
-                    int16_t sample = (((VCO * notes[n].adsr_gain) / 1000) * notes[n].gain) / 1000;
+                    int16_t sample_L = (((VCO_L * notes[n].adsr_gain) / 1000) * notes[n].gain) / 1000;
+                    int16_t sample_R = (((VCO_R * notes[n].adsr_gain) / 1000) * notes[n].gain) / 1000;
 
                     // パン処理
-                    buffer_L[i] += (sample * COS_TABLE[pan]) / INT16_MAX;
-                    buffer_R[i] += (sample * SIN_TABLE[pan]) / INT16_MAX;
+                    buffer_L[i] += (sample_L * COS_TABLE[pan]) / INT16_MAX;
+                    buffer_R[i] += (sample_R * SIN_TABLE[pan]) / INT16_MAX;
 
                     // core1を待つ
                     while(calc_mode == CALC_PHASE);
@@ -513,11 +550,22 @@ public:
     }
 
     void setDetune(uint8_t detune, uint8_t osc) {
+        if(detune > 100) detune = 100;
         if(osc == 1) {
             osc1_detune = detune / 100.0f;
         }
         else if(osc == 2) {
             osc2_detune = detune / 100.0f;
+        }
+    }
+
+    void setSpread(uint8_t spread, uint8_t osc) {
+        if(spread > 100) spread = 100;
+        if(osc == 1) {
+            osc1_spread = spread;
+        }
+        else if(osc == 2) {
+            osc2_spread = spread;
         }
     }
 
