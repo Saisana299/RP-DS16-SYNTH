@@ -1,34 +1,42 @@
 import wave
 import numpy as np
 
-def wave_to_array(file_path):
-    # waveファイルを開く
-    with wave.open(file_path, 'rb') as wave_file:
-        # チャネル数, サンプル幅, サンプリングレート, フレーム数などを取得
-        n_channels = wave_file.getnchannels()
-        sampwidth = wave_file.getsampwidth()
-        framerate = wave_file.getframerate()
-        n_frames = wave_file.getnframes()
+filename = "wavetable.wav"
+
+def read_and_normalize_wave(filename):
+    """Read a wave file and normalize its data to fit in the range -16383 to 16384."""
+    with wave.open(filename, 'r') as wav_file:
+        # チャネル数, サンプル幅, フレーム数を取得
+        n_channels = wav_file.getnchannels()
+        sampwidth = wav_file.getsampwidth()
+        nframes = wav_file.getnframes()
         
         # フレームデータを読み込む
-        frames = wave_file.readframes(n_frames)
+        data = wav_file.readframes(nframes)
         
-        # numpy配列に変換
+        # サンプル幅に基づいてデータ型を決定
         dtype = np.int16 if sampwidth == 2 else np.int32
-        audio_data = np.frombuffer(frames, dtype=dtype)
+        wave_data = np.frombuffer(data, dtype=dtype)
         
         # マルチチャネルの場合、チャネルごとに分ける
         if n_channels > 1:
-            audio_data = audio_data.reshape(-1, n_channels)
+            wave_data = wave_data.reshape(-1, n_channels)
+        
+        # データを-1.0から1.0にスケーリング
+        max_val = np.max(np.abs(wave_data))
+        normalized_data = wave_data / max_val
+        
+        # データを-16383から16384にスケーリング
+        scaled_data = normalized_data * 16384
+        scaled_data = np.clip(scaled_data, -16383, 16384)  # 値を範囲内にクリップ
+        scaled_data = np.round(scaled_data).astype(np.int16)  # 整数に変換
     
-    return audio_data
+    return scaled_data
 
-file_path = 'wavetable.wav'
-audio_array = wave_to_array(file_path)
+# Read and normalize the wave file data
+normalized_wave_data = read_and_normalize_wave(filename)
 
-# 配列の要素数をコンソールに出力
-element_count = audio_array.size
-print(f"Element Count: {element_count}")
+comma_separated_str = ", ".join(map(str, normalized_wave_data.flatten()))
+print(comma_separated_str)
 
-np.set_printoptions(threshold=np.inf)
-print(",".join(map(str, audio_array.flatten())))
+#[-16383, 16384]

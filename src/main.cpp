@@ -192,6 +192,14 @@ void receiveEvent(int bytes) {
                 wave.setDetune(receivedData[4], receivedData[5]);
             }
             break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_SPREAD, DATA_BEGIN, 0x02, 0xA2, 0x01}
+        case SYNTH_SET_SPREAD:
+            if(bytes < 6) return;
+            {
+                wave.setSpread(receivedData[4], receivedData[5]);
+            }
+            break;
     }
 }
 

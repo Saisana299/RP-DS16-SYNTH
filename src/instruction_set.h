@@ -25,6 +25,7 @@
 #define SYNTH_SET_CSHAPE  0xC9 // カスタムシェイプを設定
 #define SYNTH_SET_VOICE   0xCA // ボイスを設定
 #define SYNTH_SET_DETUNE  0xCB // デチューンを設定
+#define SYNTH_SET_SPREAD  0xCC // デチューンを設定
 
 //// 共通シンセパン状態コード
 #define LR_PAN_C 0x00

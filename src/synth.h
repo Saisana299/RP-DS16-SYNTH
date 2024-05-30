@@ -20,7 +20,7 @@ private:
     const int32_t SAMPLE_RATE;
     const uint8_t BIT_SHIFT = bitShift(SAMPLE_SIZE);
     const double HALFTONE = pow(2.0, 1.0 / 12.0) - 1.0;
-    const uint16_t DIVIDE_FIXED[7] = {200, 300, 380, 460, 540, 620, 710};
+    const uint16_t DIVIDE_FIXED[7] = {141, 173, 200, 224, 245, 265, 283};
     const int16_t SIN_TABLE[101] = {
         0, 514, 1029, 1543, 2057, 2570, 3083, 3595, 4106, 4616,
         5125, 5633, 6139, 6644, 7147, 7649, 8148, 8646, 9141, 9634,
@@ -45,7 +45,6 @@ private:
         10125, 9634, 9141, 8646, 8148, 7649, 7147, 6644, 6139, 5633,
         5125, 4616, 4106, 3595, 3083, 2570, 2057, 1543, 1029, 514, 0
     };
-    int32_t spread_pan[101][MAX_VOICE][2]; // [spread][voice][cos|sin]
 
     // コア1制御用
     volatile uint8_t calc_mode = CALC_IDLE;
@@ -117,6 +116,8 @@ private:
     float osc2_detune = 0.2f;
     uint8_t osc1_spread = 50; // MAX100
     uint8_t osc2_spread = 50;
+    int32_t osc1_spread_pan[MAX_VOICE][2]; // [voice][cos|sin]
+    int32_t osc2_spread_pan[MAX_VOICE][2];
 
     // ビットシフト
     uint8_t bitShift(size_t tableSize) {
@@ -163,22 +164,18 @@ private:
         return 440.0 * pow(2.0, (midiNote - 69) / 12.0);
     }
 
-    /*初期化時に処理*/
     void initSpreadPan() {
-        for (uint8_t spread = 0; spread <= 100; ++spread) {
-            for (uint8_t d = 0; d < MAX_VOICE; ++d) {
-                if (spread == 0) {
-                    // モノラルの場合
-                    spread_pan[spread][d][0] = FIXED_ONE; // cos(0)
-                    spread_pan[spread][d][1] = 0;         // sin(0)
-                } else {
-                    // ステレオパンの場合
-                    int32_t detunePos = ((2 * FIXED_ONE * d) / (MAX_VOICE - 1)) - FIXED_ONE; // -FIXED_ONE から FIXED_ONE の範囲
-                    int32_t unisonAngle = (detunePos * PI_4 * spread) / 100;
-                    spread_pan[spread][d][0] = (int32_t)(cos(unisonAngle / (double)FIXED_ONE) * FIXED_ONE); // X = cos
-                    spread_pan[spread][d][1] = (int32_t)(sin(unisonAngle / (double)FIXED_ONE) * FIXED_ONE); // Y = sin
-                }
-            }
+        for (uint8_t d = 0; d < osc1_voice; ++d) {
+            const auto osc1_pos = lerp(-1.0, 1.0, 1.0 * d / (osc1_voice - 1));
+            float osc1_angle = M_PI_4 * (1.0f + osc1_pos * (osc1_spread / 100.0f));
+            osc1_spread_pan[d][0] = (int32_t)(cos(osc1_angle) * FIXED_ONE); // X = cos
+            osc1_spread_pan[d][1] = (int32_t)(sin(osc1_angle) * FIXED_ONE); // Y = sin
+        }
+        for (uint8_t d = 0; d < osc2_voice; ++d) {
+            const auto osc2_pos = lerp(-1.0, 1.0, 1.0 * d / (osc2_voice - 1));
+            float osc2_angle = M_PI_4 * (1.0f + osc2_pos * (osc2_spread / 100.0f));
+            osc2_spread_pan[d][0] = (int32_t)(cos(osc2_angle) * FIXED_ONE); // X = cos
+            osc2_spread_pan[d][1] = (int32_t)(sin(osc2_angle) * FIXED_ONE); // Y = sin
         }
     }
 
@@ -437,8 +434,8 @@ public:
                     else {
                         for(uint8_t d = 0; d < osc1_v; d++) {
                             int16_t VCO = ((osc1_wave_ptr[(osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc1_v - 2];
-                            VCO_L += (VCO * spread_pan[osc1_spread][d][0]) >> FIXED_SHIFT; // cos
-                            VCO_R += (VCO * spread_pan[osc1_spread][d][1]) >> FIXED_SHIFT; // sin
+                            VCO_L += (VCO * osc1_spread_pan[d][0]) >> FIXED_SHIFT; // cos
+                            VCO_R += (VCO * osc1_spread_pan[d][1]) >> FIXED_SHIFT; // sin
                         }
                     }
                     // OSC2の処理 + core1で同時にADSR計算
@@ -451,8 +448,8 @@ public:
                         else {
                             for(uint8_t d = 0; d < osc2_v; d++) {
                                 int16_t VCO = ((osc2_wave_ptr[(osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc2_v - 2];
-                                VCO_L += (VCO * spread_pan[osc2_spread][d][0]) >> FIXED_SHIFT; // cos
-                                VCO_R += (VCO * spread_pan[osc2_spread][d][1]) >> FIXED_SHIFT; // sin
+                                VCO_L += (VCO * osc2_spread_pan[d][0]) >> FIXED_SHIFT; // cos
+                                VCO_R += (VCO * osc2_spread_pan[d][1]) >> FIXED_SHIFT; // sin
                             }
                         }
                     }
@@ -547,6 +544,7 @@ public:
         else if(osc == 2) {
             osc2_voice = voice;
         }
+        initSpreadPan();
     }
 
     void setDetune(uint8_t detune, uint8_t osc) {
@@ -557,6 +555,7 @@ public:
         else if(osc == 2) {
             osc2_detune = detune / 100.0f;
         }
+        initSpreadPan();
     }
 
     void setSpread(uint8_t spread, uint8_t osc) {
@@ -567,6 +566,7 @@ public:
         else if(osc == 2) {
             osc2_spread = spread;
         }
+        initSpreadPan();
     }
 
     void setCustomShape(int16_t *wave, uint8_t osc) {
