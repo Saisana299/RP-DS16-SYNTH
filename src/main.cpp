@@ -5,7 +5,7 @@
 #include <instruction_set.h>
 
 // SynthIDを選択
-#define SYNTH_ID 2 // 2 or 2
+#define SYNTH_ID 1 // 2 or 2
 
 // CTRL 関連
 #if SYNTH_ID == 1
@@ -83,11 +83,11 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_SHAPE, DATA_BEGIN, 0x01, 0x02}
+        // 例: {INS_BEGIN, SYNTH_SET_SHAPE, DATA_BEGIN, 0x02, 0x02, 0x01}
         case SYNTH_SET_SHAPE:
-            if(bytes < 5) return;
+            if(bytes < 6) return;
             {
-                wave.setShape(receivedData[4], 0x01);
+                wave.setShape(receivedData[4], receivedData[5]);
             }
             break;
 
@@ -256,9 +256,9 @@ void loop() {
 void loop1() {
     while(1) {
         if(isLed) {
-            digitalWrite(LED_BUILTIN, HIGH);
+            gpio_put(LED_BUILTIN, HIGH);
         } else {
-            digitalWrite(LED_BUILTIN, LOW);
+            gpio_put(LED_BUILTIN, LOW);
         }
         wave.calculate();
     }
