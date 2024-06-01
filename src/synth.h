@@ -23,13 +23,6 @@
 // sub osc?
 // osc morph?
 
-// voice=8
-// Core1[Freq]:208us
-// Core1[ADSR]:8us
-// Core0[VCO]:21us
-// Core0[Sample]:14us
-// Core1[Phase]:16us
-
 class WaveGenerator {
 private:
 
@@ -112,7 +105,7 @@ private:
     NoteCache cache[MAX_NOTES];
 
     // Master
-    int16_t amp_gain = 1000; // 1.0 = 100
+    int16_t amp_gain = 1024; // 1.0% = 1024 (in1000 = out1024)
     uint8_t pan = 50; // 0=L, 50=C, 100=R
 
     // 波形
@@ -124,38 +117,32 @@ private:
     // OSCパラメータ
     volatile uint8_t osc1_voice = 1; // 総ボイス数8まで
     volatile uint8_t osc2_voice = 1;
-    float osc1_detune = 0.2f; // 0.0f ~ 1.0f
-    float osc2_detune = 0.2f;
+    volatile float osc1_detune = 0.2f; // 0.0f ~ 1.0f
+    volatile float osc2_detune = 0.2f;
     uint8_t osc1_spread = 50; // MAX100
     uint8_t osc2_spread = 50;
     int32_t osc1_spread_pan[MAX_VOICE][2]; // [voice][cos|sin]
     int32_t osc2_spread_pan[MAX_VOICE][2];
-    int8_t osc1_oct = 0; // -4 ~ 4
-    int8_t osc2_oct = 0;
-    int8_t osc1_semi = 0; // -12 ~ 12
-    int8_t osc2_semi = 0;
-    int8_t osc1_cent = 0; // -100 ~ 100
-    int8_t osc2_cent = 0;
-    int16_t osc1_level = 1000; // 0 ~ 1000
-    int16_t osc2_level = 1000;
+    volatile int8_t osc1_oct = 0; // -4 ~ 4
+    volatile int8_t osc2_oct = 0;
+    volatile int8_t osc1_semi = 0; // -12 ~ 12
+    volatile int8_t osc2_semi = 0;
+    volatile int8_t osc1_cent = 0; // -100 ~ 100
+    volatile int8_t osc2_cent = 0;
+    int16_t osc1_level = 1024; // 0 ~ 1024 (1.0% = 1024 (in1000 = out1024))
+    int16_t osc2_level = 1024;
 
     // ADSR
-    int16_t sustain_level = 1000; // 1.0 = 1000
-    int16_t level_diff = 0; // 1.0 = 1000
-    int32_t attack_sample = (1 * SAMPLE_RATE) / 1000;
-    int32_t decay_sample = (1000 * SAMPLE_RATE) / 1000;
-    int32_t release_sample = (1 * SAMPLE_RATE) / 1000;
-    int32_t force_release_sample = (1 * SAMPLE_RATE) / 1000; // 強制R
+    int16_t sustain_level = 1024; // 1.0% = 1024 (in1000 = out1024)
+    int16_t level_diff = 0; // 1.0% = 1024 (in1000 = out1024)
+    int32_t attack_sample = (1 * SAMPLE_RATE) >> 10;
+    int32_t decay_sample = (SAMPLE_RATE << 10) >> 10;
+    int32_t release_sample = (1 * SAMPLE_RATE) >> 10;
+    int32_t force_release_sample = (1 * SAMPLE_RATE) >> 10; // 強制Release
 
     // Filter
 
     // LFO
-
-    /*debug*/ bool dvco = false;
-    /*debug*/ bool dsample = false;
-    /*debug*/ bool dadsr = false;
-    /*debug*/ bool dphase = false;
-    /*debug*/ bool dfreq = false;
 
     // ビットシフト
     uint8_t bitShift(size_t tableSize) {
@@ -377,7 +364,7 @@ public:
         notes[i].release_cnt = -1;
         notes[i].force_release_cnt = -1;
         notes[i].note = note;
-        notes[i].gain = ((amp_gain / MAX_NOTES) * ((velocity * 1000) / 127)) / 1000;
+        notes[i].gain = ((amp_gain / MAX_NOTES) * ((velocity << 10) / 127)) >> 10;
 
         if(isCache) updateActNumOn(i);
 
@@ -459,13 +446,11 @@ public:
             volatile uint32_t* osc2_phase = notes[n].osc2_phase;
             
             if (osc1_wave_ptr != nullptr) {
-                for (size_t i = 0; i < size; i++) {
+                for (size_t i = 0; i < size; ++i) {
 
                     // core1でadsrの計算
                     /*core1*/ calc_n = n;
                     /*core1*/ calc_mode = CALC_ADSR;
-
-                    // /*debug*/ unsigned long startTime = micros();
 
                     // 各OSC VCO
                     int16_t VCO_OSC1_L = 0;
@@ -481,15 +466,15 @@ public:
                             VCO_OSC1_R += VCO;
                         }
                         else {
-                            for(uint8_t d = 0; d < osc1_v; d++) {
+                            for(uint8_t d = 0; d < osc1_v; ++d) {
                                 int16_t VCO = ((osc1_wave_ptr[(osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc1_v - 2];
                                 VCO_OSC1_L += (VCO * osc1_spread_pan[d][0]) >> FIXED_SHIFT; // cos
                                 VCO_OSC1_R += (VCO * osc1_spread_pan[d][1]) >> FIXED_SHIFT; // sin
                             }
                         }
                         // OSC1レベル
-                        VCO_OSC1_L = (VCO_OSC1_L * osc1_level) / 1000;
-                        VCO_OSC1_R = (VCO_OSC1_R * osc1_level) / 1000;
+                        VCO_OSC1_L = (VCO_OSC1_L * osc1_level) >> 10;
+                        VCO_OSC1_R = (VCO_OSC1_R * osc1_level) >> 10;
                     }
 
                     // OSC2の処理 + core1で同時にADSR計算
@@ -500,15 +485,15 @@ public:
                             VCO_OSC2_R += VCO;
                         }
                         else {
-                            for(uint8_t d = 0; d < osc2_v; d++) {
+                            for(uint8_t d = 0; d < osc2_v; ++d) {
                                 int16_t VCO = ((osc2_wave_ptr[(osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc2_v - 2];
                                 VCO_OSC2_L += (VCO * osc2_spread_pan[d][0]) >> FIXED_SHIFT; // cos
                                 VCO_OSC2_R += (VCO * osc2_spread_pan[d][1]) >> FIXED_SHIFT; // sin
                             }
                         }
                         // OSC2レベル
-                        VCO_OSC2_L = (VCO_OSC2_L * osc2_level) / 1000;
-                        VCO_OSC2_R = (VCO_OSC2_R * osc2_level) / 1000;
+                        VCO_OSC2_L = (VCO_OSC2_L * osc2_level) >> 10;
+                        VCO_OSC2_R = (VCO_OSC2_R * osc2_level) >> 10;
                     }
 
                     // 合成後VCO
@@ -519,15 +504,6 @@ public:
                     VCO_L = VCO_OSC1_L + VCO_OSC2_L;
                     VCO_R = VCO_OSC1_R + VCO_OSC2_R;
 
-                    // if(!dvco) {
-                    // /*debug*/ unsigned long endTime = micros();
-                    // /*debug*/ unsigned long duration = endTime - startTime;
-                    // /*debug*/ Serial2.print("Core0[VCO]:");
-                    // /*debug*/ Serial2.print(duration);
-                    // /*debug*/ Serial2.println("us");
-                    // dvco = true;
-                    // }
-
                     // core1を待つ
                     while(calc_mode == CALC_ADSR);
 
@@ -535,24 +511,13 @@ public:
                     /*core1*/ calc_n = n;
                     /*core1*/ calc_mode = CALC_PHASE;
 
-                    // /*debug*/ startTime = micros();
-
                     // ボリューム処理 + core1で同時にフェーズ計算
-                    int16_t sample_L = (((VCO_L * notes[n].adsr_gain) / 1000) * notes[n].gain) / 1000;
-                    int16_t sample_R = (((VCO_R * notes[n].adsr_gain) / 1000) * notes[n].gain) / 1000;
+                    int16_t sample_L = (((VCO_L * notes[n].adsr_gain) >> 10) * notes[n].gain) >> 10;
+                    int16_t sample_R = (((VCO_R * notes[n].adsr_gain) >> 10) * notes[n].gain) >> 10;
 
                     // パン処理
                     buffer_L[i] += (sample_L * PAN_COS_TABLE[pan]) / INT16_MAX;
                     buffer_R[i] += (sample_R * PAN_SIN_TABLE[pan]) / INT16_MAX;
-
-                    // if(!dsample) {
-                    // /*debug*/ unsigned long endTime = micros();
-                    // /*debug*/ unsigned long duration = endTime - startTime;
-                    // /*debug*/ Serial2.print("Core0[Sample]:");
-                    // /*debug*/ Serial2.print(duration);
-                    // /*debug*/ Serial2.println("us");
-                    // dsample = true;
-                    // }
 
                     // core1を待つ
                     while(calc_mode == CALC_PHASE);
@@ -617,20 +582,24 @@ public:
     }
 
     void setAttack(int16_t attack) {
-        attack_sample = (attack * SAMPLE_RATE) / 1000;
+        int32_t _attack  = (attack << 10) / 1000; // in1000 = out1024, in500 = out512
+        attack_sample = ((int16_t)_attack * SAMPLE_RATE) >> 10;
     }
 
     void setRelease(int16_t release) {
-        release_sample = (release * SAMPLE_RATE) / 1000;
+        int32_t _release = (release << 10) / 1000; // in1000 = out1024, in500 = out512
+        release_sample = ((int16_t)_release * SAMPLE_RATE) >> 10;
     }
 
     void setDecay(int16_t decay) {
-        decay_sample = (decay * SAMPLE_RATE) / 1000;
+        int32_t _decay = (decay << 10) / 1000; // in1000 = out1024, in500 = out512
+        decay_sample = ((int16_t)_decay * SAMPLE_RATE) >> 10;
     }
 
     void setSustain(int16_t sustain) {
-        sustain_level = (sustain * 1000) / 1000;
-        level_diff = 1000 - sustain_level;
+        int32_t _sustain = (sustain << 10) / 1000; // in1000 = out1024, in500 = out512
+        sustain_level = (int16_t)_sustain;
+        level_diff = 1024 - sustain_level;
     }
 
     void setVoice(uint8_t voice, uint8_t osc) {
@@ -685,14 +654,12 @@ public:
 
         else if(calc_mode == CALC_ADSR) {
 
-            // /*debug*/ unsigned long startTime = micros();
-
             // // 基本レベル
             int32_t adsr_gain = 0;
             
             // アタック
             if (notes[calc_n].attack_cnt >= 0 && notes[calc_n].attack_cnt < notes[calc_n].attack) {
-                adsr_gain = (notes[calc_n].attack_cnt * 1000) / notes[calc_n].attack;
+                adsr_gain = (notes[calc_n].attack_cnt << 10) / notes[calc_n].attack;
                 notes[calc_n].attack_cnt++;
             }
             // 強制リリース
@@ -717,21 +684,10 @@ public:
 
             notes[calc_n].adsr_gain = adsr_gain;
 
-            // if(!dadsr) {
-            // /*debug*/ unsigned long endTime = micros();
-            // /*debug*/ unsigned long duration = endTime - startTime;
-            // /*debug*/ Serial2.print("Core1[ADSR]:");
-            // /*debug*/ Serial2.print(duration);
-            // /*debug*/ Serial2.println("us");
-            // dadsr = true;
-            // }
-
             calc_mode = CALC_IDLE;
         }
 
         else if(calc_mode == CALC_PHASE) {
-
-            // /*debug*/ unsigned long startTime = micros();
 
             // 変数の事前キャッシュ
             volatile uint8_t osc1_v = osc1_voice;
@@ -746,7 +702,7 @@ public:
                 osc1_phase[0] += osc1_phase_delta[0];
             }
             else {
-                for(uint8_t d = 0; d < osc1_v; d++) {
+                for(uint8_t d = 0; d < osc1_v; ++d) {
                     osc1_phase[d] += osc1_phase_delta[d];
                 }
             }
@@ -755,36 +711,25 @@ public:
                 osc2_phase[0] += osc2_phase_delta[0];
             }
             else {
-                for(uint8_t d = 0; d < osc2_v; d++) {
+                for(uint8_t d = 0; d < osc2_v; ++d) {
                     osc2_phase[d] += osc2_phase_delta[d];
                 }
             }
-
-            // if(!dphase) {
-            // /*debug*/ unsigned long endTime = micros();
-            // /*debug*/ unsigned long duration = endTime - startTime;
-            // /*debug*/ Serial2.print("Core1[Phase]:");
-            // /*debug*/ Serial2.print(duration);
-            // /*debug*/ Serial2.println("us");
-            // dphase = true;
-            // }
 
             calc_mode = CALC_IDLE;
         }
 
         else if(calc_mode == CALC_SET_F) {
-            // /*debug*/ unsigned long startTime = micros();
             setFrequency(calc_i, 0x01, midiNoteToFrequency(calc_note + (osc1_oct * 12) + (osc1_semi), osc1_cent));
             setFrequency(calc_i, 0x02, midiNoteToFrequency(calc_note + (osc2_oct * 12) + (osc2_semi), osc2_cent));
-            // if(!dfreq) {
-            // /*debug*/ unsigned long endTime = micros();
-            // /*debug*/ unsigned long duration = endTime - startTime;
-            // /*debug*/ Serial2.print("Core1[Freq]:");
-            // /*debug*/ Serial2.print(duration);
-            // /*debug*/ Serial2.println("us");
-            // dfreq = true;
-            // }
             calc_mode = CALC_IDLE;
         }
     }
 };
+
+// /*debug*/ unsigned long startTime = micros();
+// /*debug*/ unsigned long endTime = micros();
+// /*debug*/ unsigned long duration = endTime - startTime;
+// /*debug*/ Serial2.print(":");
+// /*debug*/ Serial2.print(duration);
+// /*debug*/ Serial2.println("us");
