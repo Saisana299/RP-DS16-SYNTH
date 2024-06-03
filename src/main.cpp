@@ -5,7 +5,7 @@
 #include <instruction_set.h>
 
 // SynthIDを選択
-#define SYNTH_ID 1 // 2 or 2
+#define SYNTH_ID 2 // 2 or 2
 
 // CTRL 関連
 #if SYNTH_ID == 1
@@ -198,6 +198,42 @@ void receiveEvent(int bytes) {
             if(bytes < 6) return;
             {
                 wave.setSpread(receivedData[4], receivedData[5]);
+            }
+            break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_LPF, DATA_BEGIN, 0x09, 0x01, 0x22...}
+        // 例: {INS_BEGIN, SYNTH_SET_LPF, DATA_BEGIN, 0x09, 0x00}
+        case SYNTH_SET_LPF:
+            if(bytes < 5) return;
+            {
+                if(receivedData[4] == 0x01){
+                    float freq, q;
+                    uint8_t d_freq[] = {receivedData[5], receivedData[6], receivedData[7], receivedData[8]};
+                    uint8_t d_q[] = {receivedData[9], receivedData[10], receivedData[11], receivedData[12]};
+                    memcpy(&freq, d_freq, sizeof(float));
+                    memcpy(&q, d_q, sizeof(float));
+                    wave.setLowPassFilter(true, freq, q);
+                } else {
+                    wave.setLowPassFilter(false);
+                }
+            }
+            break;
+
+        // 例: {INS_BEGIN, SYNTH_SET_HPF, DATA_BEGIN, 0x09, 0x01, 0x22...}
+        // 例: {INS_BEGIN, SYNTH_SET_HPF, DATA_BEGIN, 0x09, 0x00}
+        case SYNTH_SET_HPF:
+            if(bytes < 5) return;
+            {
+                if(receivedData[4] == 0x01){
+                    float freq, q;
+                    uint8_t d_freq[] = {receivedData[5], receivedData[6], receivedData[7], receivedData[8]};
+                    uint8_t d_q[] = {receivedData[9], receivedData[10], receivedData[11], receivedData[12]};
+                    memcpy(&freq, d_freq, sizeof(float));
+                    memcpy(&q, d_q, sizeof(float));
+                    wave.setHighPassFilter(true, freq, q);
+                } else {
+                    wave.setHighPassFilter(false);
+                }
             }
             break;
     }

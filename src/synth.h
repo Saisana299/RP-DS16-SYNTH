@@ -138,16 +138,18 @@ private:
     int32_t force_release_sample = (1 * SAMPLE_RATE) >> 10; // 強制Release
 
     // LPF 初期値 1000Hz 1/sqrt(2)
+    // 推奨値 freq 20～20,000 q 0.02～40.0
     bool lpf_enabled = false;
-    int16_t lp_f0, lp_f1, lp_f2, lp_f3, lp_f4;
-    int16_t lp_in1 = 0, lp_in2 = 0; // バッファ
-    int16_t lp_out1 = 0, lp_out2 = 0;
+    int32_t lp_f0, lp_f1, lp_f2, lp_f3, lp_f4;
+    int32_t lp_in1 = 0, lp_in2 = 0; // バッファ
+    int32_t lp_out1 = 0, lp_out2 = 0;
 
     // HPF 初期値 500Hz 1/sqrt(2)
+    // 推奨値 freq 20～20,000 q 0.02～40.0
     bool hpf_enabled = false;
-    int16_t hp_f0, hp_f1, hp_f2, hp_f3, hp_f4;
-    int16_t hp_in1 = 0, hp_in2 = 0;
-    int16_t hp_out1 = 0, hp_out2 = 0;
+    int32_t hp_f0, hp_f1, hp_f2, hp_f3, hp_f4;
+    int32_t hp_in1 = 0, hp_in2 = 0;
+    int32_t hp_out1 = 0, hp_out2 = 0;
 
     // LFO
 
@@ -217,7 +219,7 @@ private:
     }
 
     int16_t lpfProcess(int16_t in) {
-        int16_t out = ((lp_f0 * in) + (lp_f1 * lp_in1) + (lp_f2 * lp_in2) - (lp_f3 * lp_out1) - (lp_f4 * lp_out2)) >> 10;
+        int16_t out = ((lp_f0 * in) + (lp_f1 * lp_in1) + (lp_f2 * lp_in2) - (lp_f3 * lp_out1) - (lp_f4 * lp_out2)) >> FIXED_SHIFT;
         lp_in2 = lp_in1;
         lp_in1 = in;
         lp_out2 = lp_out1;
@@ -226,7 +228,7 @@ private:
     }
 
     int16_t hpfProcess(int16_t in) {
-        int16_t out = ((hp_f0 * in) + (hp_f1 * hp_in1) + (hp_f2 * hp_in2) - (hp_f3 * hp_out1) - (hp_f4 * hp_out2)) >> 10;
+        int16_t out = ((hp_f0 * in) + (hp_f1 * hp_in1) + (hp_f2 * hp_in2) - (hp_f3 * hp_out1) - (hp_f4 * hp_out2)) >> FIXED_SHIFT;
         hp_in2 = hp_in1;
         hp_in1 = in;
         hp_out2 = hp_out1;
@@ -247,11 +249,11 @@ private:
         float b1 = 1.0f - cos(omega);
         float b2 = (1.0f - cos(omega)) / 2.0f;
 
-        lp_f0 = (int16_t)((b0 / a0) * 1024);
-        lp_f1 = (int16_t)((b1 / a0) * 1024);
-        lp_f2 = (int16_t)((b2 / a0) * 1024);
-        lp_f3 = (int16_t)((a1 / a0) * 1024);
-        lp_f4 = (int16_t)((a2 / a0) * 1024);
+        lp_f0 = (int32_t)((b0 / a0) * 65536);
+        lp_f1 = (int32_t)((b1 / a0) * 65536);
+        lp_f2 = (int32_t)((b2 / a0) * 65536);
+        lp_f3 = (int32_t)((a1 / a0) * 65536);
+        lp_f4 = (int32_t)((a2 / a0) * 65536);
     }
 
     void highPass(float freq, float q) {
@@ -267,11 +269,11 @@ private:
         float b1 = -(1.0f + cos(omega));
         float b2 = (1.0f + cos(omega)) / 2.0f;
 
-        hp_f0 = (int16_t)((b0 / a0) * 1024);
-        hp_f1 = (int16_t)((b1 / a0) * 1024);
-        hp_f2 = (int16_t)((b2 / a0) * 1024);
-        hp_f3 = (int16_t)((a1 / a0) * 1024);
-        hp_f4 = (int16_t)((a2 / a0) * 1024);
+        hp_f0 = (int32_t)((b0 / a0) * 65536);
+        hp_f1 = (int32_t)((b1 / a0) * 65536);
+        hp_f2 = (int32_t)((b2 / a0) * 65536);
+        hp_f3 = (int32_t)((a1 / a0) * 65536);
+        hp_f4 = (int32_t)((a2 / a0) * 65536);
     }
 
     int8_t getOldNote() {
@@ -727,6 +729,16 @@ public:
             memcpy(osc2_cwave, wave, 2048 * sizeof(int16_t));
             osc2_wave = osc2_cwave;
         }
+    }
+
+    void setLowPassFilter(bool enable, float freq = 1000.0f, float q = 1.0f/sqrt(2.0f)){
+        lpf_enabled = enable;
+        if(lpf_enabled) lowPass(freq, q);
+    }
+
+    void setHighPassFilter(bool enable, float freq = 500.0f, float q = 1.0f/sqrt(2.0f)){
+        hpf_enabled = enable;
+        if(hpf_enabled) highPass(freq, q);
     }
 
     /**

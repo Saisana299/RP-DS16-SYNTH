@@ -43,6 +43,8 @@
 #define SYNTH_SET_CENT    0xCF // セントを設定
 #define SYNTH_SET_LEVEL   0xD0 // レベルを設定
 #define SYNTH_SET_OSC_LVL 0xD1 // OSCレベルを設定
+#define SYNTH_SET_LPF     0xD2 // ローパスフィルタを設定
+#define SYNTH_SET_HPF     0xD3 // ハイパスフィルタを設定
 
 //// 共通シンセ演奏状態コード
 #define SYNTH_SINGLE 0x00
