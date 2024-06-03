@@ -11,9 +11,7 @@
 #define PI_4 ((int32_t)(M_PI_4 * FIXED_ONE))
 
 //* TODO
-// filter mix
 // LFO...
-//
 // portamento?
 // chorus|delay|comp|reverb...?
 // sub osc?
@@ -218,22 +216,22 @@ private:
         }
     }
 
-    int16_t lpfProcess(int16_t in) {
+    int16_t lpfProcess(int16_t in, int16_t mix = 1 << 10) {
         int16_t out = ((lp_f0 * in) + (lp_f1 * lp_in1) + (lp_f2 * lp_in2) - (lp_f3 * lp_out1) - (lp_f4 * lp_out2)) >> FIXED_SHIFT;
         lp_in2 = lp_in1;
         lp_in1 = in;
         lp_out2 = lp_out1;
         lp_out1 = out;
-        return out;
+        return ((1024 - mix) * in + mix * out) >> 10;
     }
 
-    int16_t hpfProcess(int16_t in) {
+    int16_t hpfProcess(int16_t in, int16_t mix = 1 << 10) {
         int16_t out = ((hp_f0 * in) + (hp_f1 * hp_in1) + (hp_f2 * hp_in2) - (hp_f3 * hp_out1) - (hp_f4 * hp_out2)) >> FIXED_SHIFT;
         hp_in2 = hp_in1;
         hp_in1 = in;
         hp_out2 = hp_out1;
         hp_out1 = out;
-        return out;
+        return ((1024 - mix) * in + mix * out) >> 10;
     }
 
     void lowPass(float freq, float q) {
@@ -468,7 +466,7 @@ public:
 
         // リリースはnoteOff時のgainから行う
         notes[i].note_off_gain = notes[i].adsr_gain;
-        notes[i].release_cnt = release_sample;
+        notes[i].release_cnt = notes[i].release;
 
         notes[i].attack_cnt = -1;
         notes[i].decay_cnt = -1;
