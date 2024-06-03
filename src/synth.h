@@ -11,11 +11,7 @@
 #define PI_4 ((int32_t)(M_PI_4 * FIXED_ONE))
 
 //* TODO
-// 計算処理の見直し
-// filter cutoff(Hz)
-// filter resonance(Q)
 // filter mix
-// filet LP|HP
 // LFO...
 //
 // portamento?
@@ -23,6 +19,7 @@
 // sub osc?
 // osc morph?
 
+// 許容負荷目安：波形32個+LPF
 class WaveGenerator {
 private:
 
@@ -140,7 +137,17 @@ private:
     int32_t release_sample = (1 * SAMPLE_RATE) >> 10;
     int32_t force_release_sample = (1 * SAMPLE_RATE) >> 10; // 強制Release
 
-    // Filter
+    // LPF 初期値 1000Hz 1/sqrt(2)
+    bool lpf_enabled = false;
+    int16_t lp_f0, lp_f1, lp_f2, lp_f3, lp_f4;
+    int16_t lp_in1 = 0, lp_in2 = 0; // バッファ
+    int16_t lp_out1 = 0, lp_out2 = 0;
+
+    // HPF 初期値 500Hz 1/sqrt(2)
+    bool hpf_enabled = false;
+    int16_t hp_f0, hp_f1, hp_f2, hp_f3, hp_f4;
+    int16_t hp_in1 = 0, hp_in2 = 0;
+    int16_t hp_out1 = 0, hp_out2 = 0;
 
     // LFO
 
@@ -207,6 +214,64 @@ private:
             osc2_spread_pan[d][0] = (int32_t)(cos(osc2_angle) * FIXED_ONE); // X = cos
             osc2_spread_pan[d][1] = (int32_t)(sin(osc2_angle) * FIXED_ONE); // Y = sin
         }
+    }
+
+    int16_t lpfProcess(int16_t in) {
+        int16_t out = ((lp_f0 * in) + (lp_f1 * lp_in1) + (lp_f2 * lp_in2) - (lp_f3 * lp_out1) - (lp_f4 * lp_out2)) >> 10;
+        lp_in2 = lp_in1;
+        lp_in1 = in;
+        lp_out2 = lp_out1;
+        lp_out1 = out;
+        return out;
+    }
+
+    int16_t hpfProcess(int16_t in) {
+        int16_t out = ((hp_f0 * in) + (hp_f1 * hp_in1) + (hp_f2 * hp_in2) - (hp_f3 * hp_out1) - (hp_f4 * hp_out2)) >> 10;
+        hp_in2 = hp_in1;
+        hp_in1 = in;
+        hp_out2 = hp_out1;
+        hp_out1 = out;
+        return out;
+    }
+
+    void lowPass(float freq, float q) {
+        // フィルタ係数計算で使用する中間値を求める。
+        float omega = 2.0f * M_PI *  freq / (float)SAMPLE_RATE;
+        float alpha = sin(omega) / (2.0f * q);
+    
+        // フィルタ係数を求める。
+        float a0 = 1.0f + alpha;
+        float a1 = -2.0f * cos(omega);
+        float a2 = 1.0f - alpha;
+        float b0 = (1.0f - cos(omega)) / 2.0f;
+        float b1 = 1.0f - cos(omega);
+        float b2 = (1.0f - cos(omega)) / 2.0f;
+
+        lp_f0 = (int16_t)((b0 / a0) * 1024);
+        lp_f1 = (int16_t)((b1 / a0) * 1024);
+        lp_f2 = (int16_t)((b2 / a0) * 1024);
+        lp_f3 = (int16_t)((a1 / a0) * 1024);
+        lp_f4 = (int16_t)((a2 / a0) * 1024);
+    }
+
+    void highPass(float freq, float q) {
+        // フィルタ係数計算で使用する中間値を求める。
+        float omega = 2.0f * M_PI *  freq / (float)SAMPLE_RATE;
+        float alpha = sin(omega) / (2.0f * q);
+    
+        // フィルタ係数を求める。
+        float a0 = 1.0f + alpha;
+        float a1 = -2.0f * cos(omega);
+        float a2 = 1.0f - alpha;
+        float b0 = (1.0f + cos(omega)) / 2.0f;
+        float b1 = -(1.0f + cos(omega));
+        float b2 = (1.0f + cos(omega)) / 2.0f;
+
+        hp_f0 = (int16_t)((b0 / a0) * 1024);
+        hp_f1 = (int16_t)((b1 / a0) * 1024);
+        hp_f2 = (int16_t)((b2 / a0) * 1024);
+        hp_f3 = (int16_t)((a1 / a0) * 1024);
+        hp_f4 = (int16_t)((a2 / a0) * 1024);
     }
 
     int8_t getOldNote() {
@@ -296,6 +361,8 @@ public:
             cache[i].velocity = 0;
         }
         initSpreadPan();
+        lowPass(1000.0f, 1.0f/sqrt(2.0f));
+        highPass(500.0f, 1.0f/sqrt(2.0f));
     }
 
     uint8_t getActiveNote() {
@@ -434,75 +501,81 @@ public:
         memset(buffer_L, 0, size * sizeof(int16_t));
         memset(buffer_R, 0, size * sizeof(int16_t));
 
-        for (uint8_t n = 0; n < MAX_NOTES; ++n) {
-            if (!notes[n].active) continue;
+        // 変数の事前キャッシュ
+        int16_t* osc1_wave_ptr = osc1_wave;
+        int16_t* osc2_wave_ptr = osc2_wave;
+        uint8_t osc1_v = osc1_voice;
+        uint8_t osc2_v = osc2_voice;
+        uint16_t osc1_level_local = osc1_level;
+        uint16_t osc2_level_local = osc2_level;
+        uint8_t pan_local = pan;
 
-            // 変数の事前キャッシュ
-            int16_t* osc1_wave_ptr = osc1_wave;
-            int16_t* osc2_wave_ptr = osc2_wave;
-            volatile uint8_t osc1_v = osc1_voice;
-            volatile uint8_t osc2_v = osc2_voice;
-            volatile uint32_t* osc1_phase = notes[n].osc1_phase;
-            volatile uint32_t* osc2_phase = notes[n].osc2_phase;
-            
-            if (osc1_wave_ptr != nullptr) {
-                for (size_t i = 0; i < size; ++i) {
+        for (size_t i = 0; i < size; ++i) {
+            for (uint8_t n = 0; n < MAX_NOTES; ++n) {
+                if (!notes[n].active) continue;
 
+                // 変数の事前キャッシュ
+                volatile uint32_t* osc1_phase = notes[n].osc1_phase;
+                volatile uint32_t* osc2_phase = notes[n].osc2_phase;
+                volatile int32_t adsr_gain_local = notes[n].adsr_gain;
+                volatile int32_t gain_local = notes[n].gain;
+                
+                if (osc1_wave_ptr != nullptr || osc2_wave_ptr != nullptr) {
                     // core1でadsrの計算
                     /*core1*/ calc_n = n;
                     /*core1*/ calc_mode = CALC_ADSR;
 
-                    // 各OSC VCO
-                    int16_t VCO_OSC1_L = 0;
-                    int16_t VCO_OSC1_R = 0;
-                    int16_t VCO_OSC2_L = 0;
-                    int16_t VCO_OSC2_R = 0;
+                    // 各OSC
+                    int16_t OSC1_L = 0;
+                    int16_t OSC1_R = 0;
+                    int16_t OSC2_L = 0;
+                    int16_t OSC2_R = 0;
 
                     // OSC1の処理 + core1で同時にADSR計算
                     if(osc1_wave_ptr != nullptr) {
                         if(osc1_v == 1) {
-                            int16_t VCO = osc1_wave_ptr[(osc1_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
-                            VCO_OSC1_L += VCO;
-                            VCO_OSC1_R += VCO;
+                            int16_t OSC1 = osc1_wave_ptr[(osc1_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
+                            OSC1_L += OSC1;
+                            OSC1_R += OSC1;
                         }
                         else {
                             for(uint8_t d = 0; d < osc1_v; ++d) {
-                                int16_t VCO = ((osc1_wave_ptr[(osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc1_v - 2];
-                                VCO_OSC1_L += (VCO * osc1_spread_pan[d][0]) >> FIXED_SHIFT; // cos
-                                VCO_OSC1_R += (VCO * osc1_spread_pan[d][1]) >> FIXED_SHIFT; // sin
+                                int16_t OSC1 = ((osc1_wave_ptr[(osc1_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc1_v - 2];
+                                OSC1_L += (OSC1 * osc1_spread_pan[d][0]) >> FIXED_SHIFT; // cos
+                                OSC1_R += (OSC1 * osc1_spread_pan[d][1]) >> FIXED_SHIFT; // sin
                             }
                         }
                         // OSC1レベル
-                        VCO_OSC1_L = (VCO_OSC1_L * osc1_level) >> 10;
-                        VCO_OSC1_R = (VCO_OSC1_R * osc1_level) >> 10;
+                        OSC1_L = (OSC1_L * osc1_level_local) >> 10;
+                        OSC1_R = (OSC1_R * osc1_level_local) >> 10;
                     }
 
                     // OSC2の処理 + core1で同時にADSR計算
                     if(osc2_wave_ptr != nullptr) {
                         if(osc2_v == 1) {
-                            int16_t VCO = osc2_wave_ptr[(osc2_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
-                            VCO_OSC2_L += VCO;
-                            VCO_OSC2_R += VCO;
+                            int16_t OSC2 = osc2_wave_ptr[(osc2_phase[0] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
+                            OSC2_L += OSC2;
+                            OSC2_R += OSC2;
                         }
                         else {
                             for(uint8_t d = 0; d < osc2_v; ++d) {
-                                int16_t VCO = ((osc2_wave_ptr[(osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc2_v - 2];
-                                VCO_OSC2_L += (VCO * osc2_spread_pan[d][0]) >> FIXED_SHIFT; // cos
-                                VCO_OSC2_R += (VCO * osc2_spread_pan[d][1]) >> FIXED_SHIFT; // sin
+                                int16_t OSC2 = ((osc2_wave_ptr[(osc2_phase[d] >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc2_v - 2];
+                                OSC2_L += (OSC2 * osc2_spread_pan[d][0]) >> FIXED_SHIFT; // cos
+                                OSC2_R += (OSC2 * osc2_spread_pan[d][1]) >> FIXED_SHIFT; // sin
                             }
                         }
                         // OSC2レベル
-                        VCO_OSC2_L = (VCO_OSC2_L * osc2_level) >> 10;
-                        VCO_OSC2_R = (VCO_OSC2_R * osc2_level) >> 10;
+                        OSC2_L = (OSC2_L * osc2_level_local) >> 10;
+                        OSC2_R = (OSC2_R * osc2_level_local) >> 10;
                     }
 
-                    // 合成後VCO
-                    int16_t VCO_L = 0;
-                    int16_t VCO_R = 0;
+                    // 合成後
+                    int16_t L = 0;
+                    int16_t R = 0;
 
                     // OSC合成
-                    VCO_L = VCO_OSC1_L + VCO_OSC2_L;
-                    VCO_R = VCO_OSC1_R + VCO_OSC2_R;
+                    L = OSC1_L + OSC2_L;
+                    R = OSC1_R + OSC2_R;
 
                     // core1を待つ
                     while(calc_mode == CALC_ADSR);
@@ -512,46 +585,57 @@ public:
                     /*core1*/ calc_mode = CALC_PHASE;
 
                     // ボリューム処理 + core1で同時にフェーズ計算
-                    int16_t sample_L = (((VCO_L * notes[n].adsr_gain) >> 10) * notes[n].gain) >> 10;
-                    int16_t sample_R = (((VCO_R * notes[n].adsr_gain) >> 10) * notes[n].gain) >> 10;
-
-                    // パン処理
-                    buffer_L[i] += (sample_L * PAN_COS_TABLE[pan]) / INT16_MAX;
-                    buffer_R[i] += (sample_R * PAN_SIN_TABLE[pan]) / INT16_MAX;
+                    buffer_L[i] += (((L * adsr_gain_local) >> 10) * gain_local) >> 10;
+                    buffer_R[i] += (((R * adsr_gain_local) >> 10) * gain_local) >> 10;
 
                     // core1を待つ
                     while(calc_mode == CALC_PHASE);
                 }
-            }
 
-            // アタック終了したらディケイへ
-            if (notes[n].attack_cnt >= notes[n].attack) {
-                notes[n].attack_cnt = -1;
-                notes[n].decay_cnt = notes[n].decay;
-            }
+                // アタック終了したらディケイへ
+                if (notes[n].attack_cnt >= notes[n].attack) {
+                    notes[n].attack_cnt = -1;
+                    notes[n].decay_cnt = notes[n].decay;
+                }
 
-            // リリースが終了
-            else if (notes[n].release_cnt == 0 || notes[n].force_release_cnt == 0) {
-                notes[n].release_cnt = -1;
-                notes[n].active = false;
-                notes[n].note = 0xff;
-                notes[n].gain = 0;
+                // リリースが終了
+                else if (notes[n].release_cnt == 0 || notes[n].force_release_cnt == 0) {
+                    notes[n].release_cnt = -1;
+                    notes[n].active = false;
+                    notes[n].note = 0xff;
+                    notes[n].gain = 0;
 
-                updateActNumOff(n); // 更新してから-1にする
-                notes[n].actnum = -1;
+                    updateActNumOff(n); // 更新してから-1にする
+                    notes[n].actnum = -1;
 
-                if(!cache[n].processed) {
-                    cache[n].processed = true;
-                    noteOn(cache[n].note, cache[n].velocity, true, n);
+                    if(!cache[n].processed) {
+                        cache[n].processed = true;
+                        noteOn(cache[n].note, cache[n].velocity, true, n);
+                    }
+                }
+
+                // ディケイが終了
+                else if (notes[n].decay_cnt == 0) {
+                    notes[n].decay_cnt = -1;
                 }
             }
 
-            // ディケイが終了
-            else if (notes[n].decay_cnt == 0) {
-                notes[n].decay_cnt = -1;
+            // パン処理
+            buffer_L[i] = (buffer_L[i] * PAN_COS_TABLE[pan_local]) / INT16_MAX;
+            buffer_R[i] = (buffer_R[i] * PAN_SIN_TABLE[pan_local]) / INT16_MAX;
+
+            // フィルタ処理
+            if(lpf_enabled) {
+                buffer_L[i] = lpfProcess(buffer_L[i]);
+                buffer_R[i] = lpfProcess(buffer_R[i]);
+            }
+            if(hpf_enabled) {
+                buffer_L[i] = hpfProcess(buffer_L[i]);
+                buffer_R[i] = hpfProcess(buffer_R[i]);
             }
         }
     }
+
 
     void setShape(uint8_t id, uint8_t osc) {
         switch(id) {
@@ -690,8 +774,8 @@ public:
         else if(calc_mode == CALC_PHASE) {
 
             // 変数の事前キャッシュ
-            volatile uint8_t osc1_v = osc1_voice;
-            volatile uint8_t osc2_v = osc2_voice;
+            uint8_t osc1_v = osc1_voice;
+            uint8_t osc2_v = osc2_voice;
             volatile uint32_t* osc1_phase = notes[calc_n].osc1_phase;
             volatile uint32_t* osc2_phase = notes[calc_n].osc2_phase;
             volatile uint32_t* osc1_phase_delta = notes[calc_n].osc1_phase_delta;
