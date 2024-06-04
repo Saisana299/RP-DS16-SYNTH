@@ -14,12 +14,11 @@
 //* TODO
 // LFO...
 // portamento?
-// chorus|delay|comp|reverb...?
 // sub osc?
 // osc morph?
 // 鳴り始め遅れる？
 
-// 許容負荷目安：波形32個+LPF
+// 許容負荷目安：波形32個
 class WaveGenerator {
 private:
 
@@ -157,6 +156,7 @@ private:
     int32_t time = 250; // ms
     int16_t level = 307; // 0.3
     int16_t feedback = 512; // 0.5
+    uint32_t delay_long = 119589;
 
     // LFO
 
@@ -223,31 +223,6 @@ private:
             osc2_spread_pan[d][0] = (int32_t)(cos(osc2_angle) * FIXED_ONE); // X = cos
             osc2_spread_pan[d][1] = (int32_t)(sin(osc2_angle) * FIXED_ONE); // Y = sin
         }
-    }
-
-    int16_t delayProcess(int16_t in, uint8_t lr) {
-        int16_t tmp;
-
-        // ディレイ信号を加える
-        if(lr == 0x00)
-            tmp = in + ((level * ringbuff_L.Read()) >> 10);
-        else if(lr == 0x01)
-            tmp = in + ((level * ringbuff_R.Read()) >> 10);
-
-        // 入力信号をリングバッファへ
-        if(lr == 0x00)
-            ringbuff_L.Write(in + ((feedback * ringbuff_L.Read()) >> 10));
-        else if(lr == 0x01)
-            ringbuff_R.Write(in + ((feedback * ringbuff_R.Read()) >> 10));
-        
-        // 更新
-        if(lr == 0x00)
-            ringbuff_L.Update();
-        else if(lr == 0x01)
-            ringbuff_R.Update();
-
-        // 出力信号
-        return tmp;
     }
 
     int16_t lpfProcess(int16_t in, int16_t mix = 1 << 10) {
@@ -384,6 +359,27 @@ private:
             notes[noteIndex].osc1_phase_delta[i] = 0;
             notes[noteIndex].osc2_phase_delta[i] = 0;
         }
+    }
+
+    uint32_t calculate_delay_samples() {
+        // フィードバックを浮動小数点数に変換（16ビット整数の最大値を1024とする）
+        float feedback_ratio = (float)feedback / 1024.0f;
+
+        // フィードバックが1.0（1024）の場合は無限大
+        if (feedback_ratio >= 1.0f) {
+            return UINT32_MAX; // 可能な限り大きな整数を返す
+        }
+
+        // 60dB減衰するまでのエコー回数を計算
+        float n = log(0.001f) / log(feedback_ratio);
+
+        // 全体の残響時間をミリ秒で計算
+        float reverb_time_ms = n * (float)time;
+
+        // 残響時間をサンプル数に変換
+        uint32_t reverb_samples = (uint32_t)((reverb_time_ms / 1000.0f) * (float)SAMPLE_RATE);
+
+        return reverb_samples;
     }
 
 public:
@@ -782,8 +778,7 @@ public:
     void setDelay(bool enable, int32_t time = 250, int16_t level = 307, int16_t feedback = 512) {
         delay_enabled = enable;
         if(delay_enabled) {
-            ringbuff_L.init();
-            ringbuff_R.init();
+            delay_long = calculate_delay_samples();
             this->time = time;
             this->level = level;
             this->feedback = feedback;
@@ -791,6 +786,39 @@ public:
             ringbuff_L.SetInterval(delay_sample);
             ringbuff_R.SetInterval(delay_sample);
         }
+    }
+
+    bool isDelayEnabled() {
+        return delay_enabled;
+    }
+
+    uint32_t* getDelayLong() {
+        return &delay_long;
+    }
+
+    int16_t delayProcess(int16_t in, uint8_t lr) {
+        int16_t tmp;
+
+        // ディレイ信号を加える
+        if(lr == 0x00)
+            tmp = in + ((level * ringbuff_L.Read()) >> 10);
+        else if(lr == 0x01)
+            tmp = in + ((level * ringbuff_R.Read()) >> 10);
+
+        // 入力信号をリングバッファへ
+        if(lr == 0x00)
+            ringbuff_L.Write(in + ((feedback * ringbuff_L.Read()) >> 10));
+        else if(lr == 0x01)
+            ringbuff_R.Write(in + ((feedback * ringbuff_R.Read()) >> 10));
+        
+        // 更新
+        if(lr == 0x00)
+            ringbuff_L.Update();
+        else if(lr == 0x01)
+            ringbuff_R.Update();
+
+        // 出力信号
+        return tmp;
     }
 
     /**

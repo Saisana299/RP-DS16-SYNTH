@@ -3,9 +3,10 @@
 #include <Wire.h>
 #include <synth.h>
 #include <instruction_set.h>
+#include <ring_buffer.h>
 
 // SynthIDを選択
-#define SYNTH_ID 1 // 2 or 2
+#define SYNTH_ID 2 // 2 or 2
 
 // CTRL 関連
 #if SYNTH_ID == 1
@@ -36,6 +37,8 @@ int16_t buffer_L[BUFFER_SIZE];
 int16_t buffer_R[BUFFER_SIZE];
 
 bool isLed = false;
+uint32_t* delay_long;
+uint32_t remain = 0;
 
 uint16_t buff_i = 0;
 int16_t cshape_buff[2048];
@@ -266,6 +269,7 @@ void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
 
     wave.setDelay(true);
+    delay_long = wave.getDelayLong();
 }
 
 void loop() {
@@ -274,6 +278,7 @@ void loop() {
             static size_t buffer_index = 0;
 
             isLed = true;
+            remain = *delay_long; // 余裕をもって
             if (buffer_index == BUFFER_SIZE) {
                 wave.generate(buffer_L, buffer_R, BUFFER_SIZE);
                 buffer_index = 0;
@@ -286,7 +291,16 @@ void loop() {
             }
 
         } else {
-            isLed = false;
+            // ディレイが残っている場合の処理
+            if(wave.isDelayEnabled() && remain > 0) {
+                int16_t remain_L = wave.delayProcess(0, 0x00);
+                int16_t remain_R = wave.delayProcess(0, 0x01);
+                i2s.write(remain_L); // L
+                i2s.write(remain_R); // R
+                remain--;
+            } else {
+                isLed = false;
+            }
         }
     }
 }

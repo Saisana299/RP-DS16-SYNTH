@@ -17,13 +17,6 @@ public:
         memset(buff, 0, sizeof(int16_t) * RB_SIZE);
     }
 
-    void init() {
-        write_index = 0;
-        read_index = RB_SIZE / 2;
-
-        memset(buff, 0, sizeof(int16_t) * RB_SIZE);
-    }
-
     void SetInterval(int interval) {
         interval = interval % RB_SIZE;
         if(interval <= 0) {
