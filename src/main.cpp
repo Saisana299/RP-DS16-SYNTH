@@ -264,6 +264,8 @@ void setup() {
     i2s.begin(SAMPLE_RATE);
     
     pinMode(LED_BUILTIN, OUTPUT);
+
+    wave.setDelay(true);
 }
 
 void loop() {

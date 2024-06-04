@@ -1,5 +1,6 @@
 #include <limits.h>
 #include <shape.h>
+#include <ring_buffer.h>
 
 #define CALC_IDLE  0x00
 #define CALC_ADSR  0x01
@@ -16,6 +17,7 @@
 // chorus|delay|comp|reverb...?
 // sub osc?
 // osc morph?
+// 鳴り始め遅れる？
 
 // 許容負荷目安：波形32個+LPF
 class WaveGenerator {
@@ -132,8 +134,8 @@ private:
     int16_t level_diff = 0; // 1.0% = 1024 (in1000 = out1024)
     int32_t attack_sample = (1 * SAMPLE_RATE) >> 10;
     int32_t decay_sample = (SAMPLE_RATE << 10) >> 10;
-    int32_t release_sample = (1 * SAMPLE_RATE) >> 10;
-    int32_t force_release_sample = (1 * SAMPLE_RATE) >> 10; // 強制Release
+    int32_t release_sample = (10 * SAMPLE_RATE) >> 10;
+    int32_t force_release_sample = (10 * SAMPLE_RATE) >> 10; // 強制Release
 
     // LPF 初期値 1000Hz 1/sqrt(2)
     // 推奨値 freq 20～20,000 q 0.02～40.0
@@ -148,6 +150,13 @@ private:
     int32_t hp_f0, hp_f1, hp_f2, hp_f3, hp_f4;
     int32_t hp_in1 = 0, hp_in2 = 0;
     int32_t hp_out1 = 0, hp_out2 = 0;
+
+    // ディレイエフェクト
+    RingBuffer ringbuff_L, ringbuff_R;
+    bool delay_enabled = false;
+    int32_t time = 250; // ms
+    int16_t level = 307; // 0.3
+    int16_t feedback = 512; // 0.5
 
     // LFO
 
@@ -214,6 +223,31 @@ private:
             osc2_spread_pan[d][0] = (int32_t)(cos(osc2_angle) * FIXED_ONE); // X = cos
             osc2_spread_pan[d][1] = (int32_t)(sin(osc2_angle) * FIXED_ONE); // Y = sin
         }
+    }
+
+    int16_t delayProcess(int16_t in, uint8_t lr) {
+        int16_t tmp;
+
+        // ディレイ信号を加える
+        if(lr == 0x00)
+            tmp = in + ((level * ringbuff_L.Read()) >> 10);
+        else if(lr == 0x01)
+            tmp = in + ((level * ringbuff_R.Read()) >> 10);
+
+        // 入力信号をリングバッファへ
+        if(lr == 0x00)
+            ringbuff_L.Write(in + ((feedback * ringbuff_L.Read()) >> 10));
+        else if(lr == 0x01)
+            ringbuff_R.Write(in + ((feedback * ringbuff_R.Read()) >> 10));
+        
+        // 更新
+        if(lr == 0x00)
+            ringbuff_L.Update();
+        else if(lr == 0x01)
+            ringbuff_R.Update();
+
+        // 出力信号
+        return tmp;
     }
 
     int16_t lpfProcess(int16_t in, int16_t mix = 1 << 10) {
@@ -633,6 +667,12 @@ public:
                 buffer_L[i] = hpfProcess(buffer_L[i]);
                 buffer_R[i] = hpfProcess(buffer_R[i]);
             }
+
+            // ディレイ処理
+            if(delay_enabled) {
+                buffer_L[i] = delayProcess(buffer_L[i], 0x00);
+                buffer_R[i] = delayProcess(buffer_R[i], 0x01);
+            }
         }
     }
 
@@ -737,6 +777,20 @@ public:
     void setHighPassFilter(bool enable, float freq = 500.0f, float q = 1.0f/sqrt(2.0f)){
         hpf_enabled = enable;
         if(hpf_enabled) highPass(freq, q);
+    }
+
+    void setDelay(bool enable, int32_t time = 250, int16_t level = 307, int16_t feedback = 512) {
+        delay_enabled = enable;
+        if(delay_enabled) {
+            ringbuff_L.init();
+            ringbuff_R.init();
+            this->time = time;
+            this->level = level;
+            this->feedback = feedback;
+            int delay_sample = SAMPLE_RATE * time / 1000;
+            ringbuff_L.SetInterval(delay_sample);
+            ringbuff_R.SetInterval(delay_sample);
+        }
     }
 
     /**
