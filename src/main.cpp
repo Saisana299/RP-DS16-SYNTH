@@ -6,7 +6,7 @@
 #include <ring_buffer.h>
 
 // SynthIDを選択
-#define SYNTH_ID 2 // 2 or 2
+#define SYNTH_ID 1 // 2 or 2
 
 // CTRL 関連
 #if SYNTH_ID == 1

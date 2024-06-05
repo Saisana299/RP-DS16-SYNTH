@@ -647,6 +647,9 @@ public:
 
                     // core1を待つ
                     while(calc_mode == CALC_PHASE);
+
+                } else {
+                    noteReset();
                 }
 
                 // アタック終了したらディケイへ
