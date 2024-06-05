@@ -153,10 +153,10 @@ private:
     // ディレイエフェクト
     RingBuffer ringbuff_L, ringbuff_R;
     bool delay_enabled = false;
-    int32_t time = 250; // ms
-    int16_t level = 307; // 0.3
-    int16_t feedback = 512; // 0.5
-    uint32_t delay_long = 119589;
+    int16_t time; // ms
+    int16_t level; // 1.0 = 1024
+    int16_t feedback; // 0.5 = 512
+    uint32_t delay_long;
 
     // LFO
 
@@ -702,27 +702,39 @@ public:
     }
 
     void setAttack(int16_t attack) {
-        int32_t _attack  = (attack << 10) / 1000; // in1000 = out1024, in500 = out512
-        attack_sample = ((int16_t)_attack * SAMPLE_RATE) >> 10;
+        if(attack > 32000) attack = 32000;
+        else if(attack < 0) attack = 0;
+
+        // in1000 = out1024, in500 = out512
+        attack_sample = (((attack << 10) / 1000) * SAMPLE_RATE) >> 10;
     }
 
     void setRelease(int16_t release) {
-        int32_t _release = (release << 10) / 1000; // in1000 = out1024, in500 = out512
-        release_sample = ((int16_t)_release * SAMPLE_RATE) >> 10;
+        if(release > 32000) release = 32000;
+        else if(release < 0) release = 0;
+
+        // in1000 = out1024, in500 = out512
+        release_sample = (((release << 10) / 1000) * SAMPLE_RATE) >> 10;
     }
 
     void setDecay(int16_t decay) {
-        int32_t _decay = (decay << 10) / 1000; // in1000 = out1024, in500 = out512
-        decay_sample = ((int16_t)_decay * SAMPLE_RATE) >> 10;
+        if(decay > 32000) decay = 32000;
+        else if(decay < 0) decay = 0;
+
+        // in1000 = out1024, in500 = out512
+        decay_sample = (((decay << 10) / 1000) * SAMPLE_RATE) >> 10;
     }
 
     void setSustain(int16_t sustain) {
-        int32_t _sustain = (sustain << 10) / 1000; // in1000 = out1024, in500 = out512
-        sustain_level = (int16_t)_sustain;
+        if(sustain > 1000) sustain = 1000;
+        else if(sustain < 0) sustain = 0;
+
+        sustain_level = (sustain << 10) / 1000; // in1000 = out1024, in500 = out512
         level_diff = 1024 - sustain_level;
     }
 
     void setVoice(uint8_t voice, uint8_t osc) {
+        if(voice > MAX_VOICE) voice = MAX_VOICE;
         if(osc == 1) {
             osc1_voice = voice;
         }
@@ -766,22 +778,104 @@ public:
     }
 
     void setLowPassFilter(bool enable, float freq = 1000.0f, float q = 1.0f/sqrt(2.0f)){
+        if(freq < 20) freq = 20;
+        else if(freq > 20000) freq = 20000;
+        if(q < 0.02f) q = 0.02f;
+        else if(q > 40.0f) q = 40.0f;
+
         lpf_enabled = enable;
         if(lpf_enabled) lowPass(freq, q);
     }
 
     void setHighPassFilter(bool enable, float freq = 500.0f, float q = 1.0f/sqrt(2.0f)){
+        if(freq < 20) freq = 20;
+        else if(freq > 20000) freq = 20000;
+        if(q < 0.02f) q = 0.02f;
+        else if(q > 40.0f) q = 40.0f;
+
         hpf_enabled = enable;
         if(hpf_enabled) highPass(freq, q);
     }
 
-    void setDelay(bool enable, int32_t time = 250, int16_t level = 307, int16_t feedback = 512) {
+    void setOscLevel(uint8_t osc, int16_t level) {
+        if(level > 1000) level = 1000;
+        else if(level < 0) level = 0;
+
+        if(osc == 0x01) {
+            osc1_level = (level << 10) / 1000; // in1000 = out1024, in500 = out512
+        }
+        else if(osc == 0x02) {
+            osc2_level = (level << 10) / 1000; // in1000 = out1024, in500 = out512
+        }
+    }
+
+    void setOscPan(uint8_t osc, uint8_t pan) {
+        //
+    }
+
+    void setOscOctave(uint8_t osc, int8_t octave) {
+        if(octave > 4) octave = 4;
+        else if(octave < -4) octave -4;
+
+        if(osc == 0x01) {
+            osc1_oct = octave;
+        }
+        else if(osc == 0x02) {
+            osc2_oct = octave;
+        }
+    }
+
+    void setOscSemitone(uint8_t osc, int8_t semitone) {
+        if(semitone > 12) semitone = 12;
+        else if(semitone < -12) semitone = -12;
+
+        if(osc == 0x01) {
+            osc1_semi = semitone;
+        }
+        else if(osc == 0x02) {
+            osc2_semi = semitone;
+        }
+    }
+
+    void setOscCent(uint8_t osc, int8_t cent) {
+        if(cent > 100) cent = 100;
+        else if(cent < -100) cent = -100;
+
+        if(osc == 0x01) {
+            osc1_cent = cent;
+        }
+        else if(osc == 0x02) {
+            osc2_cent = cent;
+        }
+    }
+
+    void setAmpLevel(int16_t level) {
+        if(level > 1000) level = 1000;
+        else if(level < 0) level = 0;
+
+        amp_gain = (level << 10) / 1000; // in1000 = out1024, in500 = out512
+    }
+
+    void setAmpPan(uint8_t pan) {
+        if(pan > 100) pan = 100;
+        else if(pan < 0) pan = 0;
+        this->pan = pan;
+    }
+
+    void setDelay(bool enable, int16_t time = 250, int16_t level = 300, int16_t feedback = 500) {
+        if(time < 10) time = 10;
+        else if(time > 300) time = 300;
+        if(feedback > 900) feedback = 900;
+        else if(feedback < 0) feedback = 0;
+        if(level > 1000) level = 1000;
+        else if(level < 0) level = 0;
+
         delay_enabled = enable;
         if(delay_enabled) {
             delay_long = calculate_delay_samples();
             this->time = time;
-            this->level = level;
-            this->feedback = feedback;
+            this->level = (level << 10) / 1000;
+            this->feedback = (feedback << 10) / 1000;
             int delay_sample = SAMPLE_RATE * time / 1000;
             ringbuff_L.SetInterval(delay_sample);
             ringbuff_R.SetInterval(delay_sample);

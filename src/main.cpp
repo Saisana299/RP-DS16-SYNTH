@@ -46,8 +46,8 @@ int16_t cshape_buff[2048];
 uint8_t response = 0x00;
 
 void receiveEvent(int bytes) {
-    // 2バイト以上のみ受け付ける
-    if(bytes < 2) return;
+    // 1バイト以上のみ受け付ける
+    if(bytes < 1) return;
 
     int i = 0;
     uint8_t receivedData[bytes];
@@ -60,115 +60,104 @@ void receiveEvent(int bytes) {
         }
     }
 
-    uint8_t instruction = 0x00; // コード種別
-    if(receivedData[0] == INS_BEGIN) {
-        instruction = receivedData[1];
-    }
+    uint8_t instruction = receivedData[0];
 
     switch (instruction)
     {
-        // 例: {INS_BEGIN, SYNTH_NOTE_ON, DATA_BEGIN, 0x02, 0x53, 0xA5}
+        // 例: {SYNTH_NOTE_ON, <note>, <velocity>}
         case SYNTH_NOTE_ON:
-            if(bytes < 6) return;
+            if(bytes < 3) return;
             {
-                uint8_t note = receivedData[4];
-                uint8_t velocity = receivedData[5];
+                uint8_t note = receivedData[1];
+                uint8_t velocity = receivedData[2];
                 wave.noteOn(note, velocity);
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_NOTE_OFF, DATA_BEGIN, 0x02, 0x53, 0x00}
+        // 例: {SYNTH_NOTE_OFF, <note>, <velocity>}
         case SYNTH_NOTE_OFF:
-            if(bytes < 6) return;
+            if(bytes < 3) return;
             {
-                uint8_t note = receivedData[4];
+                uint8_t note = receivedData[1];
                 wave.noteOff(note);
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_SHAPE, DATA_BEGIN, 0x02, 0x02, 0x01}
+        // 例: {SYNTH_SET_SHAPE, <id>, <osc>}
         case SYNTH_SET_SHAPE:
-            if(bytes < 6) return;
+            if(bytes < 3) return;
             {
-                wave.setShape(receivedData[4], receivedData[5]);
+                wave.setShape(receivedData[1], receivedData[2]);
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SOUND_STOP}
+        // 例: {SYNTH_SOUND_STOP}
         case SYNTH_SOUND_STOP:
             wave.noteReset();
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_PAN, DATA_BEGIN, 0x01, 0x02}
+        // 例: {SYNTH_SET_PAN, <pan>}
         case SYNTH_SET_PAN:
-            if(bytes < 5) return;
-            if(receivedData[4] == 0x00){
-                //
-            }
-            else if(receivedData[4] == 0x01){
-                //
-            }
-            else if(receivedData[4] == 0x02){
-                //
-            }
+            if(bytes < 2) return;
+            wave.setAmpPan(receivedData[1]);
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_ATTACK, DATA_BEGIN, 0x05, 0x00, 0x30, 0x00, 0x00, 0x00}
+        // 例: {SYNTH_SET_ATTACK, 0x00, 0x30, 0x00, 0x00, 0x00}
         case SYNTH_SET_ATTACK:
         case SYNTH_SET_DECAY:
         case SYNTH_SET_RELEASE:
-            if(bytes < 9) return;
+            if(bytes < 6) return;
             {
                 int16_t data = 0;
-                data += receivedData[4] * 1000;
+                data += receivedData[1] * 1000;
+                data += receivedData[2];
+                data += receivedData[3];
+                data += receivedData[4];
                 data += receivedData[5];
-                data += receivedData[6];
-                data += receivedData[7];
-                data += receivedData[8];
-                if(receivedData[1] == SYNTH_SET_ATTACK) {
+                if(instruction == SYNTH_SET_ATTACK) {
                     wave.setAttack(data);
                 }
-                else if(receivedData[1] == SYNTH_SET_DECAY) {
+                else if(instruction == SYNTH_SET_DECAY) {
                     wave.setDecay(data);
                 }
-                else if(receivedData[1] == SYNTH_SET_RELEASE) {
+                else if(instruction == SYNTH_SET_RELEASE) {
                     wave.setRelease(data);
                 }
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_SUSTAIN, DATA_BEGIN, 0x04, 0x30, 0x00, 0x00, 0x00}
+        // 例: {SYNTH_SET_SUSTAIN, 0x30, 0x00, 0x00, 0x00}
         case SYNTH_SET_SUSTAIN:
-            if(bytes < 8) return;
+            if(bytes < 5) return;
             {
                 int16_t sustain = 0;
+                sustain += receivedData[1];
+                sustain += receivedData[2];
+                sustain += receivedData[3];
                 sustain += receivedData[4];
-                sustain += receivedData[5];
-                sustain += receivedData[6];
-                sustain += receivedData[7];
                 wave.setSustain(sustain);
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_GET_USED}
+        // 例: {SYNTH_GET_USED}
         case SYNTH_GET_USED:
             response = wave.getActiveNote();
             break;
 
-        // 例: {INS_BEGIN, SYNTH_IS_NOTE, 0x64}
+        // 例: {SYNTH_IS_NOTE, 0x64}
         case SYNTH_IS_NOTE:
-            if(wave.isNote(receivedData[2])) response = 0x01;
+            if(wave.isNote(receivedData[1])) response = 0x01;
             else response = 0x00;
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_CSHAPE, DATA_BEGIN, 0x01, 0x02, WAVE_DATA...}
+        // 例: {SYNTH_SET_CSHAPE, 0x01, 0x02, WAVE_DATA...}
         case SYNTH_SET_CSHAPE:
-            if(bytes < 30) return;
+            if(bytes < 27) return;
             {
-                for(uint16_t i = 0; i < 30; i++) {
-                    if(i < 6) continue;
+                for(uint16_t i = 0; i < 27; i++) {
+                    if(i < 3) continue;
                     if(buff_i == 2048) {
-                        wave.setCustomShape(cshape_buff, receivedData[5]);
+                        wave.setCustomShape(cshape_buff, receivedData[2]);
                         buff_i = 0;
                         break;
                     }
@@ -180,39 +169,39 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_VOICE, DATA_BEGIN, 0x02, 0x01, 0x01}
+        // 例: {SYNTH_SET_VOICE, 0x01, 0x01}
         case SYNTH_SET_VOICE:
-            if(bytes < 6) return;
+            if(bytes < 3) return;
             {
-                wave.setVoice(receivedData[4], receivedData[5]);
+                wave.setVoice(receivedData[1], receivedData[2]);
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_DETUNE, DATA_BEGIN, 0x02, 0xA2, 0x01}
+        // 例: {SYNTH_SET_DETUNE, 0xA2, 0x01}
         case SYNTH_SET_DETUNE:
-            if(bytes < 6) return;
+            if(bytes < 3) return;
             {
-                wave.setDetune(receivedData[4], receivedData[5]);
+                wave.setDetune(receivedData[1], receivedData[2]);
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_SPREAD, DATA_BEGIN, 0x02, 0xA2, 0x01}
+        // 例: {SYNTH_SET_SPREAD, 0xA2, 0x01}
         case SYNTH_SET_SPREAD:
-            if(bytes < 6) return;
+            if(bytes < 3) return;
             {
-                wave.setSpread(receivedData[4], receivedData[5]);
+                wave.setSpread(receivedData[1], receivedData[2]);
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_LPF, DATA_BEGIN, 0x09, 0x01, 0x22...}
-        // 例: {INS_BEGIN, SYNTH_SET_LPF, DATA_BEGIN, 0x09, 0x00}
+        // 例: {SYNTH_SET_LPF, 0x01, 0x22...}
+        // 例: {SYNTH_SET_LPF, 0x00}
         case SYNTH_SET_LPF:
-            if(bytes < 5) return;
+            if(bytes < 2) return;
             {
-                if(receivedData[4] == 0x01){
+                if(receivedData[1] == 0x01){
                     float freq, q;
-                    uint8_t d_freq[] = {receivedData[5], receivedData[6], receivedData[7], receivedData[8]};
-                    uint8_t d_q[] = {receivedData[9], receivedData[10], receivedData[11], receivedData[12]};
+                    uint8_t d_freq[] = {receivedData[2], receivedData[3], receivedData[4], receivedData[5]};
+                    uint8_t d_q[] = {receivedData[6], receivedData[7], receivedData[8], receivedData[9]};
                     memcpy(&freq, d_freq, sizeof(float));
                     memcpy(&q, d_q, sizeof(float));
                     wave.setLowPassFilter(true, freq, q);
@@ -222,20 +211,76 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {INS_BEGIN, SYNTH_SET_HPF, DATA_BEGIN, 0x09, 0x01, 0x22...}
-        // 例: {INS_BEGIN, SYNTH_SET_HPF, DATA_BEGIN, 0x09, 0x00}
+        // 例: {SYNTH_SET_HPF, 0x01, 0x22...}
+        // 例: {SYNTH_SET_HPF, 0x00}
         case SYNTH_SET_HPF:
-            if(bytes < 5) return;
+            if(bytes < 2) return;
             {
-                if(receivedData[4] == 0x01){
+                if(receivedData[1] == 0x01){
                     float freq, q;
-                    uint8_t d_freq[] = {receivedData[5], receivedData[6], receivedData[7], receivedData[8]};
-                    uint8_t d_q[] = {receivedData[9], receivedData[10], receivedData[11], receivedData[12]};
+                    uint8_t d_freq[] = {receivedData[2], receivedData[3], receivedData[4], receivedData[5]};
+                    uint8_t d_q[] = {receivedData[6], receivedData[7], receivedData[8], receivedData[9]};
                     memcpy(&freq, d_freq, sizeof(float));
                     memcpy(&q, d_q, sizeof(float));
                     wave.setHighPassFilter(true, freq, q);
                 } else {
                     wave.setHighPassFilter(false);
+                }
+            }
+            break;
+
+        // 例: {SYNTH_SET_OSC_LVL, <OSC>, <HB_Level>, <LB_Level>}
+        case SYNTH_SET_OSC_LVL:
+            if(bytes < 4) return;
+            {
+                wave.setOscLevel(receivedData[1], (receivedData[2] << 8) | receivedData[3]);
+            }
+            break;
+
+        // 例: {SYNTH_SET_OCT, <osc>, <octave>}
+        case SYNTH_SET_OCT:
+            if(bytes < 3) return;
+            {
+                wave.setOscOctave(receivedData[1], static_cast<int8_t>(receivedData[2]));
+            }
+            break;
+        
+        // 例: {SYNTH_SET_SEMI, <osc>, <semitone>}
+        case SYNTH_SET_SEMI:
+            if(bytes < 3) return;
+            {
+                wave.setOscSemitone(receivedData[1], static_cast<int8_t>(receivedData[2]));
+            }
+            break;
+
+        // 例: {SYNTH_SET_CENT, <osc>, <cent>}
+        case SYNTH_SET_CENT:
+            if(bytes < 3) return;
+            {
+                wave.setOscCent(receivedData[1], static_cast<int8_t>(receivedData[2]));
+            }
+            break;
+
+        // 例: {SYNTH_SET_LEVEL, <HB_level>, <LB_level>}
+        case SYNTH_SET_LEVEL:
+            if(bytes < 3) return;
+            {
+                wave.setAmpLevel((receivedData[1] << 8) | receivedData[2]);
+            }
+            break;
+
+        // 例: {SYNTH_SET_DELAY, <true|false>, <HB_time>, <LB_time>, <HB_level>, <LB_level>, <HB_feedback>, <LB_feedback>}
+        case SYNTH_SET_DELAY:
+            if(bytes < 8) return;
+            {
+                if(receivedData[1] == 0x01) {
+                    int16_t time = (receivedData[2] << 8) | receivedData[3];
+                    int16_t level = (receivedData[4] << 8) | receivedData[5];
+                    int16_t feedback = (receivedData[6] << 8) | receivedData[7];
+                    wave.setDelay(true, time, level, feedback);
+                }
+                else {
+                    wave.setDelay(false);
                 }
             }
             break;
@@ -268,7 +313,6 @@ void setup() {
     
     pinMode(LED_BUILTIN, OUTPUT);
 
-    wave.setDelay(true);
     delay_long = wave.getDelayLong();
 }
 
