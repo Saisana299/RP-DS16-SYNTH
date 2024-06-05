@@ -274,9 +274,9 @@ void receiveEvent(int bytes) {
             if(bytes < 8) return;
             {
                 if(receivedData[1] == 0x01) {
-                    int16_t time = (receivedData[2] << 8) | receivedData[3];
-                    int16_t level = (receivedData[4] << 8) | receivedData[5];
-                    int16_t feedback = (receivedData[6] << 8) | receivedData[7];
+                    int16_t time = static_cast<int16_t>((receivedData[2] << 8) | receivedData[3]);
+                    int16_t level = static_cast<int16_t>((receivedData[4] << 8) | receivedData[5]);
+                    int16_t feedback = static_cast<int16_t>((receivedData[6] << 8) | receivedData[7]);
                     wave.setDelay(true, time, level, feedback);
                 }
                 else {
@@ -322,7 +322,7 @@ void loop() {
             static size_t buffer_index = 0;
 
             isLed = true;
-            remain = *delay_long; // 余裕をもって
+            remain = *delay_long;
             if (buffer_index == BUFFER_SIZE) {
                 wave.generate(buffer_L, buffer_R, BUFFER_SIZE);
                 buffer_index = 0;

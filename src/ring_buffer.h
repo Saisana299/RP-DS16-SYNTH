@@ -1,7 +1,7 @@
 #ifndef RINGBUFFER_H
 #define RINGBUFFER_H
 
-#define RB_SIZE 14400 // 300ms (48000Hz)
+#define RB_SIZE 16800 // 300ms (48000Hz)
 
 class RingBuffer {
 private:
@@ -11,6 +11,13 @@ private:
 
 public:
     RingBuffer() {
+        write_index = 0;
+        read_index = RB_SIZE / 2;
+
+        memset(buff, 0, sizeof(int16_t) * RB_SIZE);
+    }
+
+    void reset() {
         write_index = 0;
         read_index = RB_SIZE / 2;
 

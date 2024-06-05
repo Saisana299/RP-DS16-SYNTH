@@ -156,7 +156,7 @@ private:
     int16_t time; // ms
     int16_t level; // 1.0 = 1024
     int16_t feedback; // 0.5 = 512
-    uint32_t delay_long;
+    uint32_t delay_long = 0;
 
     // LFO
 
@@ -872,13 +872,18 @@ public:
 
         delay_enabled = enable;
         if(delay_enabled) {
-            delay_long = calculate_delay_samples();
             this->time = time;
             this->level = (level << 10) / 1000;
             this->feedback = (feedback << 10) / 1000;
-            int delay_sample = SAMPLE_RATE * time / 1000;
+            int delay_sample = SAMPLE_RATE * this->time / 1000;
+            delay_long = calculate_delay_samples();
             ringbuff_L.SetInterval(delay_sample);
             ringbuff_R.SetInterval(delay_sample);
+        }
+        else {
+            delay_long = 0;
+            ringbuff_L.reset();
+            ringbuff_R.reset();
         }
     }
 
