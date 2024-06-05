@@ -283,6 +283,28 @@ private:
         hp_f4 = (int32_t)((a2 / a0) * 65536);
     }
 
+    bool canSetVoice(uint8_t osc, uint8_t voice, bool setWave = false, uint8_t new_id = 0xff) {
+        if(osc == 0x01) {
+            if (osc1_wave == nullptr && !setWave) return false;
+            uint8_t sum = 0;
+            if (new_id != 0xff || !setWave) sum += voice;
+            if (osc2_wave != nullptr) {
+                sum += osc2_voice;
+            }
+            return sum <= MAX_VOICE;
+        }
+        else if(osc == 0x02) {
+            if (osc2_wave == nullptr && !setWave) return false;
+            uint8_t sum = 0;
+            if (new_id != 0xff || !setWave) sum += voice;
+            if (osc1_wave != nullptr) {
+                sum += osc1_voice;
+            }
+            return sum <= MAX_VOICE;
+        }
+        return false;
+    }
+
     int8_t getOldNote() {
         int8_t index = -1;
         uint8_t min = 0xff;
@@ -346,11 +368,10 @@ private:
     }
 
     void resetPhase(int8_t noteIndex) {
-        notes[noteIndex].osc1_phase[0] = 0;
-        notes[noteIndex].osc2_phase[0] = 0;
-        for(uint8_t i = 1; i < MAX_VOICE; i++) {
-            notes[noteIndex].osc1_phase[i] = rand();
-            notes[noteIndex].osc2_phase[i] = rand();
+        for(uint8_t i = 0; i < MAX_VOICE; i++) {
+            uint32_t random = rand();
+            notes[noteIndex].osc1_phase[i] = random;
+            notes[noteIndex].osc2_phase[i] = random;
         }
     }
 
@@ -561,6 +582,12 @@ public:
                     int16_t OSC2_L = 0;
                     int16_t OSC2_R = 0;
 
+                    // oscが複数ある場合は音をさらに小さく
+                    uint16_t osc_divide = 100;
+                    if(osc1_wave_ptr != nullptr && osc2_wave_ptr != nullptr) {
+                        osc_divide = DIVIDE_FIXED[0];
+                    }
+
                     // OSC1の処理 + core1で同時にADSR計算
                     if(osc1_wave_ptr != nullptr) {
                         if(osc1_v == 1) {
@@ -576,8 +603,8 @@ public:
                             }
                         }
                         // OSC1レベル
-                        OSC1_L = (OSC1_L * osc1_level_local) >> 10;
-                        OSC1_R = (OSC1_R * osc1_level_local) >> 10;
+                        OSC1_L = (OSC1_L * ((osc1_level_local*100) / osc_divide)) >> 10;
+                        OSC1_R = (OSC1_R * ((osc1_level_local*100) / osc_divide)) >> 10;
                     }
 
                     // OSC2の処理 + core1で同時にADSR計算
@@ -595,8 +622,8 @@ public:
                             }
                         }
                         // OSC2レベル
-                        OSC2_L = (OSC2_L * osc2_level_local) >> 10;
-                        OSC2_R = (OSC2_R * osc2_level_local) >> 10;
+                        OSC2_L = (OSC2_L * ((osc2_level_local*100) / osc_divide)) >> 10;
+                        OSC2_R = (OSC2_R * ((osc2_level_local*100) / osc_divide)) >> 10;
                     }
 
                     // 合成後
@@ -674,6 +701,7 @@ public:
 
 
     void setShape(uint8_t id, uint8_t osc) {
+        if(!canSetVoice(osc, 1, true, id)) return;
         switch(id) {
             case 0x00:
                 if(osc == 0x01) osc1_wave = sine;
@@ -695,8 +723,14 @@ public:
                 // TODO
                 break;
             case 0xff:
-                if(osc == 0x01) osc1_wave = nullptr;
-                else if(osc == 0x02) osc2_wave = nullptr;
+                if(osc == 0x01) {
+                    osc1_wave = nullptr;
+                    osc1_voice = 1;
+                }
+                else if(osc == 0x02) {
+                    osc2_wave = nullptr;
+                    osc2_voice = 1;
+                };
                 break;
         }
     }
@@ -735,13 +769,15 @@ public:
 
     void setVoice(uint8_t voice, uint8_t osc) {
         if(voice > MAX_VOICE) voice = MAX_VOICE;
-        if(osc == 1) {
-            osc1_voice = voice;
+        if(canSetVoice(osc, voice)) {
+            if(osc == 1) {
+                osc1_voice = voice;
+            }
+            else if(osc == 2) {
+                osc2_voice = voice;
+            }
+            initSpreadPan();
         }
-        else if(osc == 2) {
-            osc2_voice = voice;
-        }
-        initSpreadPan();
     }
 
     void setDetune(uint8_t detune, uint8_t osc) {
@@ -767,6 +803,7 @@ public:
     }
 
     void setCustomShape(int16_t *wave, uint8_t osc) {
+        if(!canSetVoice(osc, 1, true, 0x00)) return;
         if(osc == 1) {
             memcpy(osc1_cwave, wave, 2048 * sizeof(int16_t));
             osc1_wave = osc1_cwave;
