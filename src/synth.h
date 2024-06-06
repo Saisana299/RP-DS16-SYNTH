@@ -16,9 +16,8 @@
 // portamento?
 // sub osc?
 // osc morph?
-// 鳴り始め遅れる？
+// 設定によって鳴り始め遅れる？
 
-// 許容負荷目安：波形32個
 class WaveGenerator {
 private:
 
@@ -69,6 +68,9 @@ private:
         uint32_t osc1_phase_delta[MAX_VOICE];
         uint32_t osc2_phase_delta[MAX_VOICE];
 
+        uint32_t osc_sub_phase;
+        uint32_t osc_sub_phase_delta;
+
         bool active;
         int8_t actnum;
 
@@ -77,7 +79,7 @@ private:
         int32_t adsr_gain;
         int32_t note_off_gain;
 
-        // ADSRはノート毎に設定します
+        // ADSRはノート毎に設定
         int32_t level_diff;
         int32_t sustain;
         int32_t attack;
@@ -110,6 +112,9 @@ private:
     int16_t osc1_cwave[SAMPLE_SIZE];
     int16_t osc2_cwave[SAMPLE_SIZE];
 
+    // サブ波形(no custom)
+    int16_t* osc_sub_wave = nullptr;
+
     // OSCパラメータ
     volatile uint8_t osc1_voice = 1; // 総ボイス数8まで
     volatile uint8_t osc2_voice = 1;
@@ -128,6 +133,12 @@ private:
     int16_t osc1_level = 1024; // 0 ~ 1024 (1.0% = 1024 (in1000 = out1024))
     int16_t osc2_level = 1024;
 
+    // サブOSCパラメータ
+    volatile int8_t osc_sub_oct = 0;
+    volatile int8_t osc_sub_semi = 0;
+    volatile int8_t osc_sub_cent = 0;
+    int16_t osc_sub_level = 1024;
+
     // ADSR
     int16_t sustain_level = 1024; // 1.0% = 1024 (in1000 = out1024)
     int16_t level_diff = 0; // 1.0% = 1024 (in1000 = out1024)
@@ -139,16 +150,22 @@ private:
     // LPF 初期値 1000Hz 1/sqrt(2)
     // 推奨値 freq 20～20,000 q 0.02～40.0
     bool lpf_enabled = false;
-    int32_t lp_f0, lp_f1, lp_f2, lp_f3, lp_f4;
-    int32_t lp_in1 = 0, lp_in2 = 0; // バッファ
-    int32_t lp_out1 = 0, lp_out2 = 0;
+    int32_t lp_f0_L, lp_f1_L, lp_f2_L, lp_f3_L, lp_f4_L;
+    int32_t lp_f0_R, lp_f1_R, lp_f2_R, lp_f3_R, lp_f4_R;
+    int32_t lp_in1_L = 0, lp_in2_L = 0; // バッファ
+    int32_t lp_in1_R = 0, lp_in2_R = 0;
+    int32_t lp_out1_L = 0, lp_out2_L = 0;
+    int32_t lp_out1_R = 0, lp_out2_R = 0;
 
     // HPF 初期値 500Hz 1/sqrt(2)
     // 推奨値 freq 20～20,000 q 0.02～40.0
     bool hpf_enabled = false;
-    int32_t hp_f0, hp_f1, hp_f2, hp_f3, hp_f4;
-    int32_t hp_in1 = 0, hp_in2 = 0;
-    int32_t hp_out1 = 0, hp_out2 = 0;
+    int32_t hp_f0_L, hp_f1_L, hp_f2_L, hp_f3_L, hp_f4_L;
+    int32_t hp_f0_R, hp_f1_R, hp_f2_R, hp_f3_R, hp_f4_R;
+    int32_t hp_in1_L = 0, hp_in2_L = 0;
+    int32_t hp_in1_R = 0, hp_in2_R = 0;
+    int32_t hp_out1_L = 0, hp_out2_L = 0;
+    int32_t hp_out1_R = 0, hp_out2_R = 0;
 
     // ディレイエフェクト
     RingBuffer ringbuff_L, ringbuff_R;
@@ -202,6 +219,10 @@ private:
                     }
                 }
             }
+            else if(osc == 0x03) {
+                // sub osc処理
+                notes[noteIndex].osc_sub_phase_delta = frequency * (float)(1ULL << 32) / SAMPLE_RATE;
+            }
         }
     }
 
@@ -225,21 +246,39 @@ private:
         }
     }
 
-    int16_t lpfProcess(int16_t in, int16_t mix = 1 << 10) {
-        int16_t out = ((lp_f0 * in) + (lp_f1 * lp_in1) + (lp_f2 * lp_in2) - (lp_f3 * lp_out1) - (lp_f4 * lp_out2)) >> FIXED_SHIFT;
-        lp_in2 = lp_in1;
-        lp_in1 = in;
-        lp_out2 = lp_out1;
-        lp_out1 = out;
+    int16_t lpfProcessL(int16_t in, int16_t mix = 1 << 10) {
+        int16_t out = ((lp_f0_L * in) + (lp_f1_L * lp_in1_L) + (lp_f2_L * lp_in2_L) - (lp_f3_L * lp_out1_L) - (lp_f4_L * lp_out2_L)) >> FIXED_SHIFT;
+        lp_in2_L = lp_in1_L;
+        lp_in1_L = in;
+        lp_out2_L = lp_out1_L;
+        lp_out1_L = out;
         return ((1024 - mix) * in + mix * out) >> 10;
     }
 
-    int16_t hpfProcess(int16_t in, int16_t mix = 1 << 10) {
-        int16_t out = ((hp_f0 * in) + (hp_f1 * hp_in1) + (hp_f2 * hp_in2) - (hp_f3 * hp_out1) - (hp_f4 * hp_out2)) >> FIXED_SHIFT;
-        hp_in2 = hp_in1;
-        hp_in1 = in;
-        hp_out2 = hp_out1;
-        hp_out1 = out;
+    int16_t lpfProcessR(int16_t in, int16_t mix = 1 << 10) {
+        int16_t out = ((lp_f0_R * in) + (lp_f1_R * lp_in1_R) + (lp_f2_R * lp_in2_R) - (lp_f3_R * lp_out1_R) - (lp_f4_R * lp_out2_R)) >> FIXED_SHIFT;
+        lp_in2_R = lp_in1_R;
+        lp_in1_R = in;
+        lp_out2_R = lp_out1_R;
+        lp_out1_R = out;
+        return ((1024 - mix) * in + mix * out) >> 10;
+    }
+
+    int16_t hpfProcessL(int16_t in, int16_t mix = 1 << 10) {
+        int16_t out = ((hp_f0_L * in) + (hp_f1_L * hp_in1_L) + (hp_f2_L * hp_in2_L) - (hp_f3_L * hp_out1_L) - (hp_f4_L * hp_out2_L)) >> FIXED_SHIFT;
+        hp_in2_L = hp_in1_L;
+        hp_in1_L = in;
+        hp_out2_L = hp_out1_L;
+        hp_out1_L = out;
+        return ((1024 - mix) * in + mix * out) >> 10;
+    }
+
+    int16_t hpfProcessR(int16_t in, int16_t mix = 1 << 10) {
+        int16_t out = ((hp_f0_R * in) + (hp_f1_R * hp_in1_R) + (hp_f2_R * hp_in2_R) - (hp_f3_R * hp_out1_R) - (hp_f4_R * hp_out2_R)) >> FIXED_SHIFT;
+        hp_in2_R = hp_in1_R;
+        hp_in1_R = in;
+        hp_out2_R = hp_out1_R;
+        hp_out1_R = out;
         return ((1024 - mix) * in + mix * out) >> 10;
     }
 
@@ -256,11 +295,11 @@ private:
         float b1 = 1.0f - cos(omega);
         float b2 = (1.0f - cos(omega)) / 2.0f;
 
-        lp_f0 = (int32_t)((b0 / a0) * 65536);
-        lp_f1 = (int32_t)((b1 / a0) * 65536);
-        lp_f2 = (int32_t)((b2 / a0) * 65536);
-        lp_f3 = (int32_t)((a1 / a0) * 65536);
-        lp_f4 = (int32_t)((a2 / a0) * 65536);
+        lp_f0_L = lp_f0_R = (int32_t)((b0 / a0) * 65536);
+        lp_f1_L = lp_f1_R = (int32_t)((b1 / a0) * 65536);
+        lp_f2_L = lp_f2_R = (int32_t)((b2 / a0) * 65536);
+        lp_f3_L = lp_f3_R = (int32_t)((a1 / a0) * 65536);
+        lp_f4_L = lp_f4_R = (int32_t)((a2 / a0) * 65536);
     }
 
     void highPass(float freq, float q) {
@@ -276,11 +315,11 @@ private:
         float b1 = -(1.0f + cos(omega));
         float b2 = (1.0f + cos(omega)) / 2.0f;
 
-        hp_f0 = (int32_t)((b0 / a0) * 65536);
-        hp_f1 = (int32_t)((b1 / a0) * 65536);
-        hp_f2 = (int32_t)((b2 / a0) * 65536);
-        hp_f3 = (int32_t)((a1 / a0) * 65536);
-        hp_f4 = (int32_t)((a2 / a0) * 65536);
+        hp_f0_L = hp_f0_R = (int32_t)((b0 / a0) * 65536);
+        hp_f1_L = hp_f1_R = (int32_t)((b1 / a0) * 65536);
+        hp_f2_L = hp_f2_R = (int32_t)((b2 / a0) * 65536);
+        hp_f3_L = hp_f3_R = (int32_t)((a1 / a0) * 65536);
+        hp_f4_L = hp_f4_R = (int32_t)((a2 / a0) * 65536);
     }
 
     bool canSetVoice(uint8_t osc, uint8_t voice, bool setWave = false, uint8_t new_id = 0xff) {
@@ -288,20 +327,30 @@ private:
             if (osc1_wave == nullptr && !setWave) return false;
             uint8_t sum = 0;
             if (new_id != 0xff || !setWave) sum += voice;
-            if (osc2_wave != nullptr) {
-                sum += osc2_voice;
-            }
+            if (osc2_wave != nullptr) sum += osc2_voice;
+            if (osc_sub_wave != nullptr) sum += 1;
+            
             return sum <= MAX_VOICE;
         }
         else if(osc == 0x02) {
             if (osc2_wave == nullptr && !setWave) return false;
             uint8_t sum = 0;
             if (new_id != 0xff || !setWave) sum += voice;
-            if (osc1_wave != nullptr) {
-                sum += osc1_voice;
-            }
+            if (osc1_wave != nullptr) sum += osc1_voice;
+            if (osc_sub_wave != nullptr) sum += 1;
+            
             return sum <= MAX_VOICE;
         }
+        else if(osc == 0x03) {
+            if (osc_sub_wave == nullptr && !setWave) return false;
+            uint8_t sum = 0;
+            if (new_id != 0xff || !setWave) sum += voice;
+            if (osc1_wave != nullptr) sum += osc1_voice;
+            if (osc2_wave != nullptr) sum += osc2_voice;
+            
+            return sum <= MAX_VOICE;
+        }
+
         return false;
     }
 
@@ -372,6 +421,8 @@ private:
             uint32_t random = rand();
             notes[noteIndex].osc1_phase[i] = random;
             notes[noteIndex].osc2_phase[i] = random;
+
+            if(i == 0) notes[noteIndex].osc_sub_phase = random;
         }
     }
 
@@ -380,6 +431,7 @@ private:
             notes[noteIndex].osc1_phase_delta[i] = 0;
             notes[noteIndex].osc2_phase_delta[i] = 0;
         }
+        notes[noteIndex].osc_sub_phase_delta = 0;
     }
 
     uint32_t calculate_delay_samples() {
@@ -555,10 +607,12 @@ public:
         // 変数の事前キャッシュ
         int16_t* osc1_wave_ptr = osc1_wave;
         int16_t* osc2_wave_ptr = osc2_wave;
+        int16_t* osc_sub_wave_ptr = osc_sub_wave;
         uint8_t osc1_v = osc1_voice;
         uint8_t osc2_v = osc2_voice;
         uint16_t osc1_level_local = osc1_level;
         uint16_t osc2_level_local = osc2_level;
+        uint16_t osc_sub_level_local = osc_sub_level;
         uint8_t pan_local = pan;
 
         for (size_t i = 0; i < size; ++i) {
@@ -568,23 +622,31 @@ public:
                 // 変数の事前キャッシュ
                 volatile uint32_t* osc1_phase = notes[n].osc1_phase;
                 volatile uint32_t* osc2_phase = notes[n].osc2_phase;
+                volatile uint32_t osc_sub_phase = notes[n].osc_sub_phase;
                 volatile int32_t adsr_gain_local = notes[n].adsr_gain;
                 volatile int32_t gain_local = notes[n].gain;
                 
-                if (osc1_wave_ptr != nullptr || osc2_wave_ptr != nullptr) {
+                if (osc1_wave_ptr != nullptr || osc2_wave_ptr != nullptr || osc_sub_wave_ptr != nullptr) {
                     // core1でadsrの計算
                     /*core1*/ calc_n = n;
                     /*core1*/ calc_mode = CALC_ADSR;
 
                     // 各OSC
-                    int16_t OSC1_L = 0;
-                    int16_t OSC1_R = 0;
-                    int16_t OSC2_L = 0;
-                    int16_t OSC2_R = 0;
+                    int16_t OSC1_L = 0, OSC1_R = 0;
+                    int16_t OSC2_L = 0, OSC2_R = 0;
+                    int16_t OSC_SUB_L = 0, OSC_SUB_R = 0;
 
                     // oscが複数ある場合は音をさらに小さく
                     uint16_t osc_divide = 100;
-                    if(osc1_wave_ptr != nullptr && osc2_wave_ptr != nullptr) {
+                    uint8_t not_null = 0;
+                    if(osc1_wave_ptr != nullptr) not_null++;
+                    if(osc2_wave_ptr != nullptr) not_null++;
+                    if(osc_sub_wave_ptr != nullptr) not_null++;
+                    
+                    if(not_null == 3) {
+                        osc_divide = DIVIDE_FIXED[2];
+                    }
+                    else if(not_null == 2) {
                         osc_divide = DIVIDE_FIXED[0];
                     }
 
@@ -626,13 +688,23 @@ public:
                         OSC2_R = (OSC2_R * ((osc2_level_local*100) / osc_divide)) >> 10;
                     }
 
+                    // SUB OSCの処理
+                    if(osc_sub_wave_ptr != nullptr) {
+                        int16_t OSC_SUB = osc_sub_wave_ptr[(osc_sub_phase >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
+                        OSC_SUB_L += OSC_SUB;
+                        OSC_SUB_R += OSC_SUB;
+                        // OSC_SUBレベル
+                        OSC_SUB_L = (OSC_SUB_L * ((osc_sub_level_local*100) / osc_divide)) >> 10;
+                        OSC_SUB_R = (OSC_SUB_R * ((osc_sub_level_local*100) / osc_divide)) >> 10;
+                    }
+
                     // 合成後
                     int16_t L = 0;
                     int16_t R = 0;
 
                     // OSC合成
-                    L = OSC1_L + OSC2_L;
-                    R = OSC1_R + OSC2_R;
+                    L = OSC1_L + OSC2_L + OSC_SUB_L;
+                    R = OSC1_R + OSC2_R + OSC_SUB_R;
 
                     // core1を待つ
                     while(calc_mode == CALC_ADSR);
@@ -686,12 +758,12 @@ public:
 
             // フィルタ処理
             if(lpf_enabled) {
-                buffer_L[i] = lpfProcess(buffer_L[i]);
-                buffer_R[i] = lpfProcess(buffer_R[i]);
+                buffer_L[i] = lpfProcessL(buffer_L[i]);
+                buffer_R[i] = lpfProcessR(buffer_R[i]);
             }
             if(hpf_enabled) {
-                buffer_L[i] = hpfProcess(buffer_L[i]);
-                buffer_R[i] = hpfProcess(buffer_R[i]);
+                buffer_L[i] = hpfProcessL(buffer_L[i]);
+                buffer_R[i] = hpfProcessR(buffer_R[i]);
             }
 
             // ディレイ処理
@@ -709,18 +781,22 @@ public:
             case 0x00:
                 if(osc == 0x01) osc1_wave = sine;
                 else if(osc == 0x02) osc2_wave = sine;
+                else if(osc == 0x03) osc_sub_wave = sine;
                 break;
             case 0x01:
                 if(osc == 0x01) osc1_wave = triangle;
                 else if(osc == 0x02) osc2_wave = triangle;
+                else if(osc == 0x03) osc_sub_wave = triangle;
                 break;
             case 0x02:
                 if(osc == 0x01) osc1_wave = saw;
                 else if(osc == 0x02) osc2_wave = saw;
+                else if(osc == 0x03) osc_sub_wave = saw;
                 break;
             case 0x03:
                 if(osc == 0x01) osc1_wave = square;
                 else if(osc == 0x02) osc2_wave = square;
+                else if(osc == 0x03) osc_sub_wave = square;
                 break;
             case 0x04:
                 // TODO
@@ -733,7 +809,10 @@ public:
                 else if(osc == 0x02) {
                     osc2_wave = nullptr;
                     osc2_voice = 1;
-                };
+                }
+                else if(osc == 0x03) {
+                    osc_sub_wave = nullptr;
+                }
                 break;
         }
     }
@@ -847,6 +926,9 @@ public:
         else if(osc == 0x02) {
             osc2_level = (level << 10) / 1000; // in1000 = out1024, in500 = out512
         }
+        else if(osc == 0x03) {
+            osc_sub_level = (level << 10) / 1000; // in1000 = out1024, in500 = out512
+        }
     }
 
     void setOscPan(uint8_t osc, uint8_t pan) {
@@ -863,6 +945,9 @@ public:
         else if(osc == 0x02) {
             osc2_oct = octave;
         }
+        else if(osc == 0x03) {
+            osc_sub_oct = octave;
+        }
     }
 
     void setOscSemitone(uint8_t osc, int8_t semitone) {
@@ -875,6 +960,9 @@ public:
         else if(osc == 0x02) {
             osc2_semi = semitone;
         }
+        else if(osc == 0x03) {
+            osc_sub_semi = semitone;
+        }
     }
 
     void setOscCent(uint8_t osc, int8_t cent) {
@@ -886,6 +974,9 @@ public:
         }
         else if(osc == 0x02) {
             osc2_cent = cent;
+        }
+        else if(osc == 0x03) {
+            osc_sub_cent = cent;
         }
     }
 
@@ -1011,6 +1102,7 @@ public:
             volatile uint32_t* osc2_phase = notes[calc_n].osc2_phase;
             volatile uint32_t* osc1_phase_delta = notes[calc_n].osc1_phase_delta;
             volatile uint32_t* osc2_phase_delta = notes[calc_n].osc2_phase_delta;
+            volatile uint32_t osc_sub_phase_delta = notes[calc_n].osc_sub_phase_delta;
 
             // OSC1 次の位相へ
             if(osc1_v == 1) {
@@ -1030,6 +1122,8 @@ public:
                     osc2_phase[d] += osc2_phase_delta[d];
                 }
             }
+            // OSC SUB 次の位相へ
+            notes[calc_n].osc_sub_phase += osc_sub_phase_delta;
 
             calc_mode = CALC_IDLE;
         }
@@ -1037,6 +1131,7 @@ public:
         else if(calc_mode == CALC_SET_F) {
             setFrequency(calc_i, 0x01, midiNoteToFrequency(calc_note + (osc1_oct * 12) + (osc1_semi), osc1_cent));
             setFrequency(calc_i, 0x02, midiNoteToFrequency(calc_note + (osc2_oct * 12) + (osc2_semi), osc2_cent));
+            setFrequency(calc_i, 0x03, midiNoteToFrequency(calc_note + (osc_sub_oct * 12) + (osc_sub_semi), osc_sub_cent));
             calc_mode = CALC_IDLE;
         }
     }
