@@ -12,8 +12,7 @@
 #define FIXED_ONE (1 << FIXED_SHIFT)
 #define PI_4 ((int32_t)(M_PI_4 * FIXED_ONE))
 
-// TODO キャッシュ必要性の再確認
-// https://team-ebi.com/arc/217
+// TODO OSC*1 8voiceはOK OSC*2 4voice*2 はNG何故 (処理分けが必要の可能性)
 
 /* --- 後々実装・確認すること ---*/
 // LFO...
@@ -213,47 +212,55 @@ private:
             float osc2_freq =  midiNoteToFrequency(calc_note + (osc2_oct * 12) + (osc2_semi), osc2_cent);
             float osc_sub_freq =  midiNoteToFrequency(calc_note + (osc_sub_oct * 12) + (osc_sub_semi), osc_sub_cent);
 
+            // 変数キャッシュ
+            volatile Note* p_note = &notes[noteIndex];
+            volatile uint32_t* osc1_phase_delta = &p_note->osc1_phase_delta[0];
+            volatile uint32_t* osc2_phase_delta = &p_note->osc2_phase_delta[0];
+
             // osc1処理
             if(osc1_voice == 1) {
-                notes[noteIndex].osc1_phase_delta[0] = osc1_freq * (float)(1ULL << 32) / SAMPLE_RATE;
+                *osc1_phase_delta = osc1_freq * (float)(1ULL << 32) / SAMPLE_RATE;
             }
             else {
-                for(uint8_t d = 0; d < osc1_voice; d++) {
+                for(uint8_t d = 0; d < osc1_voice; ++d, ++osc1_phase_delta) {
                     const auto pos = lerp(-1.0f, 1.0f, 1.0f * d / (osc1_voice - 1));
                     float detuneFactor = static_cast<float>(1.0 + HALFTONE * osc1_detune * pos);
-                    notes[noteIndex].osc1_phase_delta[d] = (osc1_freq * detuneFactor) * (float)(1ULL << 32) / SAMPLE_RATE;
+                    *osc1_phase_delta = (osc1_freq * detuneFactor) * (float)(1ULL << 32) / SAMPLE_RATE;
                 }
             }
 
             // osc2処理
             if(osc2_voice == 1) {
-                notes[noteIndex].osc2_phase_delta[0] = osc2_freq * (float)(1ULL << 32) / SAMPLE_RATE;
+                *osc2_phase_delta = osc2_freq * (float)(1ULL << 32) / SAMPLE_RATE;
             }
             else {
-                for(uint8_t d = 0; d < osc2_voice; d++) {
+                for(uint8_t d = 0; d < osc2_voice; ++d, ++osc2_phase_delta) {
                     const auto pos = lerp(-1.0f, 1.0f, 1.0f * d / (osc2_voice - 1));
                     float detuneFactor = static_cast<float>(1.0 + HALFTONE * osc2_detune * pos);
-                    notes[noteIndex].osc2_phase_delta[d] = (osc2_freq * detuneFactor) * (float)(1ULL << 32) / SAMPLE_RATE;
+                    *osc2_phase_delta = (osc2_freq * detuneFactor) * (float)(1ULL << 32) / SAMPLE_RATE;
                 }
             }
 
             // sub osc処理
-            notes[noteIndex].osc_sub_phase_delta = osc_sub_freq * (float)(1ULL << 32) / SAMPLE_RATE;
+            p_note->osc_sub_phase_delta = osc_sub_freq * (float)(1ULL << 32) / SAMPLE_RATE;
         }
     }
 
     void initSpreadPan() {
-        for (uint8_t d = 0; d < osc1_voice; ++d) {
+        int32_t (*p_osc1_spread_pan)[2] = &osc1_spread_pan[0];
+        int32_t (*p_osc2_spread_pan)[2] = &osc2_spread_pan[0];
+
+        for (uint8_t d = 0; d < osc1_voice; ++d, ++p_osc1_spread_pan) {
             const auto osc1_pos = lerp(-1.0f, 1.0f, 1.0f * d / (osc1_voice - 1));
             float osc1_angle = M_PI_4 * (1.0f + osc1_pos * (osc1_spread / 100.0f));
-            osc1_spread_pan[d][0] = (int32_t)(cos(osc1_angle) * FIXED_ONE); // X = cos
-            osc1_spread_pan[d][1] = (int32_t)(sin(osc1_angle) * FIXED_ONE); // Y = sin
+            *p_osc1_spread_pan[0] = (int32_t)(cos(osc1_angle) * FIXED_ONE); // X = cos
+            *p_osc1_spread_pan[1] = (int32_t)(sin(osc1_angle) * FIXED_ONE); // Y = sin
         }
-        for (uint8_t d = 0; d < osc2_voice; ++d) {
+        for (uint8_t d = 0; d < osc2_voice; ++d, ++p_osc2_spread_pan) {
             const auto osc2_pos = lerp(-1.0f, 1.0f, 1.0f * d / (osc2_voice - 1));
             float osc2_angle = M_PI_4 * (1.0f + osc2_pos * (osc2_spread / 100.0f));
-            osc2_spread_pan[d][0] = (int32_t)(cos(osc2_angle) * FIXED_ONE); // X = cos
-            osc2_spread_pan[d][1] = (int32_t)(sin(osc2_angle) * FIXED_ONE); // Y = sin
+            *p_osc2_spread_pan[0] = (int32_t)(cos(osc2_angle) * FIXED_ONE); // X = cos
+            *p_osc2_spread_pan[1] = (int32_t)(sin(osc2_angle) * FIXED_ONE); // Y = sin
         }
     }
 
@@ -368,13 +375,15 @@ private:
     int8_t getOldNote() {
         int8_t index = -1;
         uint8_t min = 0xff;
-        for(uint8_t i = 0; i < MAX_NOTES; i++) {
+        volatile Note* p_note = &notes[0];
+
+        for(uint8_t i = 0; i < MAX_NOTES; ++i, ++p_note) {
             if(getActiveNote() == MAX_NOTES) {
-                if(notes[i].actnum < min){
-                    min = notes[i].actnum;
+                if(p_note->actnum < min){
+                    min = p_note->actnum;
                     index = i;
                 }
-            } else if(notes[i].active == false) {
+            } else if(p_note->active == false) {
                 index = i;
             }
         }
@@ -383,25 +392,31 @@ private:
 
     int8_t getNoteIndex(uint8_t note) {
         int8_t index = -1;
-        for(uint8_t i = 0; i < MAX_NOTES; i++) {
-            if(notes[i].note == note) index = i;
+        volatile Note* p_note = &notes[0];
+
+        for(uint8_t i = 0; i < MAX_NOTES; ++i, ++p_note) {
+            if(p_note->note == note) index = i;
         }
         return index;
     }
 
     void updateActNumOn(int noteIndex) {
+        volatile Note* i_note = &notes[noteIndex];
+
         if (noteIndex < 0 || noteIndex >= MAX_NOTES) {
             return;
         }
-        if (!notes[noteIndex].active) {
+        if (!i_note->active) {
             return;
         }
-        if (notes[noteIndex].actnum != 3) return;
+        if (i_note->actnum != 3) return;
 
-        for (uint8_t i = 0; i < MAX_NOTES; ++i) {
+        volatile Note* p_note = &notes[0];
+
+        for (uint8_t i = 0; i < MAX_NOTES; ++i, ++p_note) {
             if (i == noteIndex) continue;
-            if (notes[i].active && notes[i].actnum <= notes[noteIndex].actnum) {
-                if(notes[i].actnum > -1) notes[i].actnum--;
+            if (p_note->active && p_note->actnum <= i_note->actnum) {
+                if(p_note->actnum > -1) p_note->actnum--;
             }
         }
     }
@@ -410,17 +425,23 @@ private:
         if (noteIndex < 0 || noteIndex >= MAX_NOTES) {
             return;
         }
-        for (uint8_t i = 0; i < MAX_NOTES; ++i) {
-            if (notes[i].actnum > notes[noteIndex].actnum) {
-                if(notes[i].actnum > -1) notes[i].actnum--;
+
+        volatile Note* i_note = &notes[noteIndex];
+        volatile Note* p_note = &notes[0];
+
+        for (uint8_t i = 0; i < MAX_NOTES; ++i, ++p_note) {
+            if (p_note->actnum > i_note->actnum) {
+                if(p_note->actnum > -1) p_note->actnum--;
             }
         }
     }
 
     bool isActiveNote(uint8_t note) {
         bool active = false;
-        for(uint8_t i = 0; i < MAX_NOTES; i++) {
-            if(notes[i].note == note && notes[i].active == true){
+        volatile Note* p_note = &notes[0];
+
+        for(uint8_t i = 0; i < MAX_NOTES; ++i, ++p_note) {
+            if(p_note->note == note && p_note->active == true){
                 active = true;
             }
         }
@@ -428,21 +449,29 @@ private:
     }
 
     void resetPhase(int8_t noteIndex) {
-        for(uint8_t i = 0; i < MAX_VOICE; i++) {
-            uint32_t random = rand();
-            notes[noteIndex].osc1_phase[i] = random;
-            notes[noteIndex].osc2_phase[i] = random;
+        volatile Note* i_note = &notes[noteIndex];
+        volatile uint32_t* osc1_phase = i_note->osc1_phase;
+        volatile uint32_t* osc2_phase = i_note->osc2_phase;
 
-            if(i == 0) notes[noteIndex].osc_sub_phase = random;
+        for(uint8_t i = 0; i < MAX_VOICE; ++i) {
+            uint32_t random = rand();
+            i_note->osc1_phase[i] = random;
+            i_note->osc2_phase[i] = random;
+
+            if(i == 0) i_note->osc_sub_phase = random;
         }
     }
 
     void resetPhaseDelta(int8_t noteIndex) {
-        for(uint8_t i = 0; i < MAX_VOICE; i++) {
-            notes[noteIndex].osc1_phase_delta[i] = 0;
-            notes[noteIndex].osc2_phase_delta[i] = 0;
+        volatile Note* i_note = &notes[noteIndex];
+        volatile uint32_t* osc1_phase_delta = i_note->osc1_phase_delta;
+        volatile uint32_t* osc2_phase_delta = i_note->osc2_phase_delta;
+
+        for(uint8_t i = 0; i < MAX_VOICE; ++i) {
+            i_note->osc1_phase_delta[i] = 0;
+            i_note->osc2_phase_delta[i] = 0;
         }
-        notes[noteIndex].osc_sub_phase_delta = 0;
+        i_note->osc_sub_phase_delta = 0;
     }
 
     uint32_t calculate_delay_samples() {
@@ -481,8 +510,10 @@ public:
 
     uint8_t getActiveNote() {
         uint8_t active = 0;
-        for(uint8_t i = 0; i < MAX_NOTES; i++) {
-            if(notes[i].active == true) active++;
+        volatile Note* p_note = &notes[0];
+
+        for(uint8_t i = 0; i < MAX_NOTES; ++i, ++p_note) {
+            if(p_note->active == true) active++;
         }
         return active;
     }
@@ -551,8 +582,9 @@ public:
 
         // actnumの更新
         int8_t newActNum = -1;
-        for(uint8_t j = 0; j < MAX_NOTES; j++) {
-            if(notes[j].actnum > newActNum) newActNum = notes[j].actnum;
+        volatile Note* p_note = &notes[0];
+        for(uint8_t j = 0; j < MAX_NOTES; ++j, ++p_note) {
+            if(p_note->actnum > newActNum) newActNum = p_note->actnum;
         }
         newActNum++;
         if(newActNum >= 4) newActNum = 3;
@@ -567,9 +599,10 @@ public:
 
     void noteOff(uint8_t note) {
         // cache にある場合は消す
-        for(uint8_t n = 0; n < MAX_NOTES; n++) {
-            if(cache[n].note == note && !cache[n].processed) {
-                cache[n].processed = true;
+        NoteCache* p_cache = &cache[0];
+        for(uint8_t n = 0; n < MAX_NOTES; ++n, ++p_cache) {
+            if(p_cache->note == note && !p_cache->processed) {
+                p_cache->processed = true;
             }
         }
 
@@ -587,25 +620,27 @@ public:
    }
 
     void noteReset() {
-        for(uint8_t i = 0; i < MAX_NOTES; i++) {
+        volatile Note* p_note = &notes[0];
+
+        for(uint8_t i = 0; i < MAX_NOTES; ++i, ++p_note) {
             resetPhase(i);
             resetPhaseDelta(i);
-            notes[i].active = false;
-            notes[i].actnum = -1;
-            notes[i].note = 0xff;
-            notes[i].gain = 0;
-            notes[i].adsr_gain = 0;
-            notes[i].note_off_gain = 0;
-            notes[i].attack_cnt = -1;
-            notes[i].decay_cnt = -1;
-            notes[i].release_cnt = -1;
-            notes[i].force_release_cnt = -1;
+            p_note->active = false;
+            p_note->actnum = -1;
+            p_note->note = 0xff;
+            p_note->gain = 0;
+            p_note->adsr_gain = 0;
+            p_note->note_off_gain = 0;
+            p_note->attack_cnt = -1;
+            p_note->decay_cnt = -1;
+            p_note->release_cnt = -1;
+            p_note->force_release_cnt = -1;
 
-            notes[i].level_diff = level_diff;
-            notes[i].sustain = sustain_level;
-            notes[i].attack = attack_sample;
-            notes[i].decay = decay_sample;
-            notes[i].release = release_sample;
+            p_note->level_diff = level_diff;
+            p_note->sustain = sustain_level;
+            p_note->attack = attack_sample;
+            p_note->decay = decay_sample;
+            p_note->release = release_sample;
         }
     }
 
