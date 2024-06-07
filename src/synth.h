@@ -701,7 +701,8 @@ public:
         for (size_t i = 0; i < size; ++i, ++p_buffer_L, ++p_buffer_R) {
             // notesの先頭アドレス
             p_note = &notes[0];
-            for (uint8_t n = 0; n < MAX_NOTES; ++n, ++p_note) {
+            p_cache = &cache[0];
+            for (uint8_t n = 0; n < MAX_NOTES; ++n, ++p_note, ++p_cache) {
                 if (!p_note->active) continue;
 
                 // 初期化
@@ -710,7 +711,6 @@ public:
                 OSC_SUB_L = 0, OSC_SUB_R = 0;
 
                 // 配列の事前キャッシュ
-                p_cache = &cache[0];
                 p_osc1_phase = &p_note->osc1_phase[0];
                 p_osc2_phase = &p_note->osc2_phase[0];
                 p_osc1_spread_pan = &osc1_spread_pan[0];
