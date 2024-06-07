@@ -13,6 +13,8 @@
 
 //* TODO
 // LFO...
+// パルスウィズモジュレーション
+// FM
 // portamento?
 // sub osc?
 // osc morph?
@@ -115,6 +117,9 @@ private:
     // サブ波形(no custom)
     int16_t* osc_sub_wave = nullptr;
 
+    // OSC特殊合成モード
+    bool ring_modulation = false; // RM有効時は負荷が上昇するため最大ボイス数は6とする、またsub oscは使用禁止
+
     // OSCパラメータ
     volatile uint8_t osc1_voice = 1; // 総ボイス数8まで
     volatile uint8_t osc2_voice = 1;
@@ -191,44 +196,45 @@ private:
         return a + t * (b - a);
     }
 
-    void setFrequency(int noteIndex, uint8_t osc, float frequency) {
-        if (noteIndex >= 0 && noteIndex < MAX_NOTES) {
-            if(osc == 0x01) {
-                // osc1処理
-                if(osc1_voice == 1) {
-                    notes[noteIndex].osc1_phase_delta[0] = frequency * (float)(1ULL << 32) / SAMPLE_RATE;
-                }
-                else {
-                    for(uint8_t d = 0; d < osc1_voice; d++) {
-                        const auto pos = lerp(-1.0f, 1.0f, 1.0f * d / (osc1_voice - 1));
-                        float detuneFactor = static_cast<float>(1.0 + HALFTONE * osc1_detune * pos);
-                        notes[noteIndex].osc1_phase_delta[d] = (frequency * detuneFactor) * (float)(1ULL << 32) / SAMPLE_RATE;
-                    }
-                }
-            }
-            else if(osc == 0x02) {
-                // osc2処理
-                if(osc2_voice == 1) {
-                    notes[noteIndex].osc2_phase_delta[0] = frequency * (float)(1ULL << 32) / SAMPLE_RATE;
-                }
-                else {
-                    for(uint8_t d = 0; d < osc2_voice; d++) {
-                        const auto pos = lerp(-1.0f, 1.0f, 1.0f * d / (osc2_voice - 1));
-                        float detuneFactor = static_cast<float>(1.0 + HALFTONE * osc2_detune * pos);
-                        notes[noteIndex].osc2_phase_delta[d] = (frequency * detuneFactor) * (float)(1ULL << 32) / SAMPLE_RATE;
-                    }
-                }
-            }
-            else if(osc == 0x03) {
-                // sub osc処理
-                notes[noteIndex].osc_sub_phase_delta = frequency * (float)(1ULL << 32) / SAMPLE_RATE;
-            }
-        }
-    }
-
     float midiNoteToFrequency(uint8_t midiNote, int8_t cent) {
         float frequency = 440.0 * pow(2.0, (midiNote - 69) / 12.0);
         return frequency * pow(2.0, cent / 1200.0);
+    }
+
+    void setFrequency(int noteIndex) {
+        if (noteIndex >= 0 && noteIndex < MAX_NOTES) {
+
+            float osc1_freq =  midiNoteToFrequency(calc_note + (osc1_oct * 12) + (osc1_semi), osc1_cent);
+            float osc2_freq =  midiNoteToFrequency(calc_note + (osc2_oct * 12) + (osc2_semi), osc2_cent);
+            float osc_sub_freq =  midiNoteToFrequency(calc_note + (osc_sub_oct * 12) + (osc_sub_semi), osc_sub_cent);
+
+            // osc1処理
+            if(osc1_voice == 1) {
+                notes[noteIndex].osc1_phase_delta[0] = osc1_freq * (float)(1ULL << 32) / SAMPLE_RATE;
+            }
+            else {
+                for(uint8_t d = 0; d < osc1_voice; d++) {
+                    const auto pos = lerp(-1.0f, 1.0f, 1.0f * d / (osc1_voice - 1));
+                    float detuneFactor = static_cast<float>(1.0 + HALFTONE * osc1_detune * pos);
+                    notes[noteIndex].osc1_phase_delta[d] = (osc1_freq * detuneFactor) * (float)(1ULL << 32) / SAMPLE_RATE;
+                }
+            }
+
+            // osc2処理
+            if(osc2_voice == 1) {
+                notes[noteIndex].osc2_phase_delta[0] = osc2_freq * (float)(1ULL << 32) / SAMPLE_RATE;
+            }
+            else {
+                for(uint8_t d = 0; d < osc2_voice; d++) {
+                    const auto pos = lerp(-1.0f, 1.0f, 1.0f * d / (osc2_voice - 1));
+                    float detuneFactor = static_cast<float>(1.0 + HALFTONE * osc2_detune * pos);
+                    notes[noteIndex].osc2_phase_delta[d] = (osc2_freq * detuneFactor) * (float)(1ULL << 32) / SAMPLE_RATE;
+                }
+            }
+
+            // sub osc処理
+            notes[noteIndex].osc_sub_phase_delta = osc_sub_freq * (float)(1ULL << 32) / SAMPLE_RATE;
+        }
     }
 
     void initSpreadPan() {
@@ -625,7 +631,7 @@ public:
                 volatile uint32_t osc_sub_phase = notes[n].osc_sub_phase;
                 volatile int32_t adsr_gain_local = notes[n].adsr_gain;
                 volatile int32_t gain_local = notes[n].gain;
-                
+
                 if (osc1_wave_ptr != nullptr || osc2_wave_ptr != nullptr || osc_sub_wave_ptr != nullptr) {
                     // core1でadsrの計算
                     /*core1*/ calc_n = n;
@@ -642,7 +648,7 @@ public:
                     if(osc1_wave_ptr != nullptr) not_null++;
                     if(osc2_wave_ptr != nullptr) not_null++;
                     if(osc_sub_wave_ptr != nullptr) not_null++;
-                    
+
                     if(not_null == 3) {
                         osc_divide = DIVIDE_FIXED[2];
                     }
@@ -664,9 +670,6 @@ public:
                                 OSC1_R += (OSC1 * osc1_spread_pan[d][1]) >> FIXED_SHIFT; // sin
                             }
                         }
-                        // OSC1レベル
-                        OSC1_L = (OSC1_L * ((osc1_level_local*100) / osc_divide)) >> 10;
-                        OSC1_R = (OSC1_R * ((osc1_level_local*100) / osc_divide)) >> 10;
                     }
 
                     // OSC2の処理 + core1で同時にADSR計算
@@ -683,9 +686,6 @@ public:
                                 OSC2_R += (OSC2 * osc2_spread_pan[d][1]) >> FIXED_SHIFT; // sin
                             }
                         }
-                        // OSC2レベル
-                        OSC2_L = (OSC2_L * ((osc2_level_local*100) / osc_divide)) >> 10;
-                        OSC2_R = (OSC2_R * ((osc2_level_local*100) / osc_divide)) >> 10;
                     }
 
                     // SUB OSCの処理
@@ -693,14 +693,37 @@ public:
                         int16_t OSC_SUB = osc_sub_wave_ptr[(osc_sub_phase >> BIT_SHIFT) & (SAMPLE_SIZE - 1)];
                         OSC_SUB_L += OSC_SUB;
                         OSC_SUB_R += OSC_SUB;
-                        // OSC_SUBレベル
+                    }
+
+                    // 合成用変数
+                    int16_t L = 0, RM_L = 0;
+                    int16_t R = 0, RM_R = 0;
+
+                    // リングモジュレーション
+                    if(ring_modulation) {
+                        if(osc1_wave_ptr != nullptr && osc2_wave_ptr != nullptr) {
+                            RM_L = (OSC1_L * OSC2_L) / 16384;
+                            RM_R = (OSC1_R * OSC2_R) / 16384;
+                            OSC1_L = (OSC1_L + OSC2_L) / 2;
+                            OSC1_R = (OSC1_R + OSC2_R) / 2;
+                            OSC2_L = RM_L;
+                            OSC2_R = RM_R;
+                        }
+                    }
+
+                    // OSCレベル調整
+                    if(osc1_wave_ptr != nullptr) {
+                        OSC1_L = (OSC1_L * ((osc1_level_local*100) / osc_divide)) >> 10;
+                        OSC1_R = (OSC1_R * ((osc1_level_local*100) / osc_divide)) >> 10;
+                    }
+                    if(osc2_wave_ptr != nullptr) {
+                        OSC2_L = (OSC2_L * ((osc2_level_local*100) / osc_divide)) >> 10;
+                        OSC2_R = (OSC2_R * ((osc2_level_local*100) / osc_divide)) >> 10;
+                    }
+                    if(osc_sub_wave_ptr != nullptr) {
                         OSC_SUB_L = (OSC_SUB_L * ((osc_sub_level_local*100) / osc_divide)) >> 10;
                         OSC_SUB_R = (OSC_SUB_R * ((osc_sub_level_local*100) / osc_divide)) >> 10;
                     }
-
-                    // 合成後
-                    int16_t L = 0;
-                    int16_t R = 0;
 
                     // OSC合成
                     L = OSC1_L + OSC2_L + OSC_SUB_L;
@@ -1129,9 +1152,7 @@ public:
         }
 
         else if(calc_mode == CALC_SET_F) {
-            setFrequency(calc_i, 0x01, midiNoteToFrequency(calc_note + (osc1_oct * 12) + (osc1_semi), osc1_cent));
-            setFrequency(calc_i, 0x02, midiNoteToFrequency(calc_note + (osc2_oct * 12) + (osc2_semi), osc2_cent));
-            setFrequency(calc_i, 0x03, midiNoteToFrequency(calc_note + (osc_sub_oct * 12) + (osc_sub_semi), osc_sub_cent));
+            setFrequency(calc_i);
             calc_mode = CALC_IDLE;
         }
     }

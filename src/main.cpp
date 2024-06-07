@@ -6,12 +6,12 @@
 #include <ring_buffer.h>
 
 // SynthIDを選択
-#define SYNTH_ID 2 // 2 or 2
+#define SYNTH_ID 2 // 1 or 2
 
 // CTRL 関連
 #if SYNTH_ID == 1
     #define I2C_ADDR 0x08
-    
+
 #elif SYNTH_ID == 2
     #define I2C_ADDR 0x09
 
