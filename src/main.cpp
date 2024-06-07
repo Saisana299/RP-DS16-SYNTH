@@ -6,7 +6,7 @@
 #include <ring_buffer.h>
 
 // SynthIDを選択
-#define SYNTH_ID 2 // 1 or 2
+#define SYNTH_ID 1 // 1 or 2
 
 // CTRL 関連
 #if SYNTH_ID == 1
@@ -310,7 +310,7 @@ void setup() {
     i2s.setDATA(PIN_I2S_DOUT);
     i2s.setBitsPerSample(SAMPLE_BITS);
     i2s.begin(SAMPLE_RATE);
-    
+
     pinMode(LED_BUILTIN, OUTPUT);
 
     delay_long = wave.getDelayLong();
@@ -324,7 +324,13 @@ void loop() {
             isLed = true;
             remain = *delay_long;
             if (buffer_index == BUFFER_SIZE) {
-                wave.generate(buffer_L, buffer_R, BUFFER_SIZE);
+                // /*debug*/ unsigned long startTime = micros();
+                wave.generate(buffer_L, buffer_R, BUFFER_SIZE); // 目標: 5ミリ秒以内に完了する
+                // /*debug*/ unsigned long endTime = micros();
+                // /*debug*/ unsigned long duration = endTime - startTime;
+                // /*debug*/ Serial2.print(":");
+                // /*debug*/ Serial2.print(duration);
+                // /*debug*/ Serial2.println("us");
                 buffer_index = 0;
             }
 
