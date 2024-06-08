@@ -13,6 +13,7 @@
 #define PI_4 ((int32_t)(M_PI_4 * FIXED_ONE))
 
 // TODO OSC*1 8voiceはOK OSC*2 4voice*2 はNG何故 (処理分けが必要の可能性)
+// TODO たまにプチノイズが乗る unison問わず 4音で
 
 /* --- 後々実装・確認すること ---*/
 // LFO...
@@ -592,7 +593,7 @@ public:
         notes[i].actnum = newActNum;
 
         // core1を待つ
-        while(calc_mode == CALC_PHASE);
+        while(calc_mode == CALC_SET_F);
 
         notes[i].active = true;
     }
