@@ -3,7 +3,7 @@
 #include <ring_buffer.h>
 
 #define CALC_IDLE       0x00
-#define CALC_ADSR       0x01
+#define CALC_ADSR_OSC   0x01
 #define CALC_PHASE      0x02
 #define CALC_SET_F      0x03
 #define CALC_PAN_FILTER 0x04
@@ -12,8 +12,7 @@
 #define FIXED_ONE (1 << FIXED_SHIFT)
 #define PI_4 ((int32_t)(M_PI_4 * FIXED_ONE))
 
-// TODO OSC*1 8voiceはOK OSC*2 4voice*2 はNG何故 (処理分けが必要の可能性)
-// TODO たまにプチノイズが乗る unison問わず 4音で
+// TODO さらなる処理の最適化
 
 /* --- 後々実装・確認すること ---*/
 // LFO...
@@ -68,6 +67,12 @@ private:
     volatile int8_t calc_i = 0x00;
     volatile uint8_t calc_note = 0x00;
     volatile int16_t calc_r;
+    volatile int16_t calc_osc1_L;
+    volatile int16_t calc_osc1_R;
+    volatile int16_t calc_osc2_L;
+    volatile int16_t calc_osc2_R;
+    volatile uint8_t calc_1v, calc_2v;
+    volatile uint16_t calc_divide;
 
     struct Note {
         uint32_t osc1_phase[MAX_VOICE];
@@ -123,7 +128,7 @@ private:
     int16_t* osc_sub_wave = nullptr;
 
     // OSC特殊合成モード
-    bool ring_modulation = false; // 計6voiceまで、sub osc使用禁止
+    bool ring_modulation = false;
 
     // OSCパラメータ
     volatile uint8_t osc1_voice = 1; // 通常時ボイス数8まで
@@ -132,16 +137,16 @@ private:
     volatile float osc2_detune = 0.2f;
     uint8_t osc1_spread = 50; // MAX100
     uint8_t osc2_spread = 50;
-    int32_t osc1_spread_pan[MAX_VOICE][2]; // [voice][cos|sin]
-    int32_t osc2_spread_pan[MAX_VOICE][2];
+    volatile int32_t osc1_spread_pan[MAX_VOICE][2]; // [voice][cos|sin]
+    volatile int32_t osc2_spread_pan[MAX_VOICE][2];
     volatile int8_t osc1_oct = 0; // -4 ~ 4
     volatile int8_t osc2_oct = 0;
     volatile int8_t osc1_semi = 0; // -12 ~ 12
     volatile int8_t osc2_semi = 0;
     volatile int8_t osc1_cent = 0; // -100 ~ 100
     volatile int8_t osc2_cent = 0;
-    int16_t osc1_level = 1024; // 0 ~ 1024 (1.0% = 1024 (in1000 = out1024))
-    int16_t osc2_level = 1024;
+    volatile int16_t osc1_level = 1024; // 0 ~ 1024 (1.0% = 1024 (in1000 = out1024))
+    volatile int16_t osc2_level = 1024;
 
     // サブOSCパラメータ
     volatile int8_t osc_sub_oct = 0;
@@ -248,8 +253,8 @@ private:
     }
 
     void initSpreadPan() {
-        int32_t (*p_osc1_spread_pan)[2] = &osc1_spread_pan[0];
-        int32_t (*p_osc2_spread_pan)[2] = &osc2_spread_pan[0];
+        volatile int32_t (*p_osc1_spread_pan)[2] = &osc1_spread_pan[0];
+        volatile int32_t (*p_osc2_spread_pan)[2] = &osc2_spread_pan[0];
 
         for (uint8_t d = 0; d < osc1_voice; ++d, ++p_osc1_spread_pan) {
             const auto osc1_pos = lerp(-1.0f, 1.0f, 1.0f * d / (osc1_voice - 1));
@@ -656,22 +661,23 @@ public:
         int16_t L, RM_L;
         int16_t R, RM_R;
         int16_t osc1_pre_level, osc2_pre_level, osc_sub_pre_level;
+        uint8_t core0_1v, core0_2v, core1_1v, core1_2v;
 
         // 配列のキャッシュ用
         volatile Note* p_note;
         NoteCache* p_cache;
         volatile uint32_t* p_osc1_phase;
         volatile uint32_t* p_osc2_phase;
-        int32_t (*p_osc1_spread_pan)[2];
-        int32_t (*p_osc2_spread_pan)[2];
+        volatile int32_t (*p_osc1_spread_pan)[2];
+        volatile int32_t (*p_osc2_spread_pan)[2];
         int16_t* p_buffer_L;
         volatile int16_t* p_buffer_R;
 
         // 変数のキャッシュ
         uint8_t osc1_v = osc1_voice;
         uint8_t osc2_v = osc2_voice;
-        uint16_t osc1_level_local = osc1_level;
-        uint16_t osc2_level_local = osc2_level;
+        volatile uint16_t osc1_level_local = osc1_level;
+        volatile uint16_t osc2_level_local = osc2_level;
         uint16_t osc_sub_level_local = osc_sub_level;
         uint8_t pan_local = pan;
 
@@ -694,6 +700,8 @@ public:
         else if(not_null == 2) {
             osc_divide = DIVIDE_FIXED[0];
         }
+
+        calc_divide = osc_divide;
 
         // バッファ配列の事前キャッシュ
         p_buffer_L = &buffer_L[0];
@@ -718,9 +726,26 @@ public:
                 p_osc2_spread_pan = &osc2_spread_pan[0];
 
                 if (osc1_wave != nullptr || osc2_wave != nullptr || osc_sub_wave != nullptr) {
+
+                    // 少しcore1で分散計算する。
+                    // この設計はvoiceの値が大きいほど効果がある。
+                    core0_1v = core0_2v = core1_1v = core1_2v = 0;
+                    if(osc1_v > 1) {
+                        core1_1v = osc1_v / 2;
+                        core0_1v = osc1_v - core1_1v + 1;
+                        core1_1v -= 1;
+                        calc_1v = core1_1v;
+                    }
+                    if(osc2_v > 1) {
+                        core1_2v = osc2_v / 2;
+                        core0_2v = osc2_v - core1_2v + 1;
+                        core1_2v -= 1;
+                        calc_2v = core1_2v;
+                    }
+
                     // core1でadsrの計算
                     /*core1*/ calc_n = n;
-                    /*core1*/ calc_mode = CALC_ADSR;
+                    /*core1*/ calc_mode = CALC_ADSR_OSC;
 
                     // OSC1の処理
                     if(osc1_wave != nullptr) {
@@ -730,8 +755,9 @@ public:
                             OSC1_R += OSC1;
                         }
                         else {
-                            for(d = 0; d < osc1_v; ++d, ++p_osc1_phase, ++p_osc1_spread_pan) {
-                                OSC1 = ((osc1_wave[(*p_osc1_phase >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc1_v - 2];
+                            uint16_t divide = DIVIDE_FIXED[osc1_v - 2];
+                            for(d = 0; d < core0_1v; ++d, ++p_osc1_phase, ++p_osc1_spread_pan) {
+                                OSC1 = ((osc1_wave[(*p_osc1_phase >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / divide;
                                 OSC1_L += (OSC1 * (*p_osc1_spread_pan[0])) >> FIXED_SHIFT; // cos
                                 OSC1_R += (OSC1 * (*p_osc1_spread_pan[1])) >> FIXED_SHIFT; // sin
                             }
@@ -750,8 +776,9 @@ public:
                             OSC2_R += OSC2;
                         }
                         else {
-                            for(d = 0; d < osc2_v; ++d, ++p_osc2_phase, ++p_osc2_spread_pan) {
-                                OSC2 = ((osc2_wave[(*p_osc2_phase >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / DIVIDE_FIXED[osc2_v - 2];
+                            uint16_t divide = DIVIDE_FIXED[osc2_v - 2];
+                            for(d = 0; d < core0_2v; ++d, ++p_osc2_phase, ++p_osc2_spread_pan) {
+                                OSC2 = ((osc2_wave[(*p_osc2_phase >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / divide;
                                 OSC2_L += (OSC2 * (*p_osc2_spread_pan[0])) >> FIXED_SHIFT; // cos
                                 OSC2_R += (OSC2 * (*p_osc2_spread_pan[1])) >> FIXED_SHIFT; // sin
                             }
@@ -774,11 +801,17 @@ public:
                     }
 
                     // core1を待つ
-                    while(calc_mode == CALC_ADSR);
+                    while(calc_mode == CALC_ADSR_OSC);
 
                     // core1で次のフェーズの計算
                     /*core1*/ calc_n = n;
                     /*core1*/ calc_mode = CALC_PHASE;
+
+                    // 計算結果格納
+                    OSC1_L += calc_osc1_L;
+                    OSC1_R += calc_osc1_R;
+                    OSC2_L += calc_osc2_L;
+                    OSC2_R += calc_osc2_R;
 
                     // 合成用変数 初期化
                     L = 0, RM_L = 0;
@@ -1111,6 +1144,10 @@ public:
         }
     }
 
+    void setRingModulation(bool enable = true) {
+        ring_modulation = enable;
+    }
+
     bool isDelayEnabled() {
         return delay_enabled;
     }
@@ -1151,13 +1188,38 @@ public:
     void calculate() {
         if(calc_mode == CALC_IDLE) return;
 
-        else if(calc_mode == CALC_ADSR) {
+        else if(calc_mode == CALC_ADSR_OSC) {
 
             // 基本レベル
             int32_t calc_adsr_gain = 0;
 
             // 配列のキャッシュ
             volatile Note* calc_notes = &notes[calc_n];
+
+            // OSC計算用のキャッシュ
+            uint8_t d;
+            int16_t OSC1, OSC2;
+            int16_t OSC1_L = 0, OSC1_R = 0;
+            int16_t OSC2_L = 0, OSC2_R = 0;
+            volatile uint32_t* p_osc1_phase;
+            volatile uint32_t* p_osc2_phase;
+            volatile int32_t (*p_osc1_spread_pan)[2];
+            volatile int32_t (*p_osc2_spread_pan)[2];
+            int16_t osc1_pre_level, osc2_pre_level;
+
+            uint16_t osc1_level_local = osc1_level;
+            uint16_t osc2_level_local = osc2_level;
+            uint8_t osc1_v = osc1_voice;
+            uint8_t osc2_v = osc2_voice;
+            uint8_t half_1v = calc_1v;
+            uint8_t half_2v = calc_2v;
+            uint16_t osc_divide = calc_divide;
+            p_osc1_phase = &calc_notes->osc1_phase[osc1_v - half_1v];
+            p_osc1_spread_pan = &osc1_spread_pan[osc1_v - half_1v];
+            p_osc2_phase = &calc_notes->osc2_phase[osc2_v - half_2v];
+            p_osc2_spread_pan = &osc2_spread_pan[osc2_v - half_2v];
+
+            calc_osc1_L = calc_osc1_R = calc_osc2_L = calc_osc2_R = 0;
 
             // アタック
             if (calc_notes->attack_cnt >= 0 && calc_notes->attack_cnt < calc_notes->attack) {
@@ -1185,6 +1247,42 @@ public:
             }
 
             calc_notes->adsr_gain = calc_adsr_gain;
+
+            // OSC1の処理
+            if(half_1v > 0) {
+                if(osc1_wave != nullptr) {
+                    for(d = 0; d < half_1v; ++d, ++p_osc1_phase, ++p_osc1_spread_pan) {
+                        uint16_t divide = DIVIDE_FIXED[osc1_v - 2];
+                        OSC1 = ((osc1_wave[(*p_osc1_phase >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / divide;
+                        OSC1_L += (OSC1 * (*p_osc1_spread_pan[0])) >> FIXED_SHIFT; // cos
+                        OSC1_R += (OSC1 * (*p_osc1_spread_pan[1])) >> FIXED_SHIFT; // sin
+                    }
+                    // OSC1レベル処理
+                    osc1_pre_level = (osc1_level_local*100) / osc_divide;
+                    OSC1_L = (OSC1_L * (osc1_pre_level)) >> 10;
+                    OSC1_R = (OSC1_R * (osc1_pre_level)) >> 10;
+                }
+                calc_osc1_L = OSC1_L;
+                calc_osc1_R = OSC1_R;
+            }
+
+            // OSC2の処理
+            if(half_2v > 0) {
+                if(osc2_wave != nullptr) {
+                    for(d = 0; d < half_2v; ++d, ++p_osc2_phase, ++p_osc2_spread_pan) {
+                        uint16_t divide = DIVIDE_FIXED[osc2_v - 2];
+                        OSC2 = ((osc2_wave[(*p_osc2_phase >> BIT_SHIFT) & (SAMPLE_SIZE - 1)])*100) / divide;
+                        OSC2_L += (OSC2 * (*p_osc2_spread_pan[0])) >> FIXED_SHIFT; // cos
+                        OSC2_R += (OSC2 * (*p_osc2_spread_pan[1])) >> FIXED_SHIFT; // sin
+                    }
+                    // OSC2レベル処理
+                    osc2_pre_level = (osc2_level_local*100) / osc_divide;
+                    OSC2_L = (OSC2_L * (osc2_pre_level)) >> 10;
+                    OSC2_R = (OSC2_R * (osc2_pre_level)) >> 10;
+                }
+                calc_osc2_L = OSC2_L;
+                calc_osc2_R = OSC2_R;
+            }
 
             calc_mode = CALC_IDLE;
         }

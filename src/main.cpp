@@ -244,7 +244,7 @@ void receiveEvent(int bytes) {
                 wave.setOscOctave(receivedData[1], static_cast<int8_t>(receivedData[2]));
             }
             break;
-        
+
         // 例: {SYNTH_SET_SEMI, <osc>, <semitone>}
         case SYNTH_SET_SEMI:
             if(bytes < 3) return;
