@@ -107,7 +107,7 @@ private:
     };
 
     volatile Note notes[MAX_NOTES]; // core1でも使用
-    volatile NoteCache cache[MAX_NOTES];
+    NoteCache cache[MAX_NOTES];
 
     // Master
     int16_t amp_gain = 1024; // 1.0% = 1024 (in1000 = out1024)
@@ -600,7 +600,7 @@ public:
 
     void noteOff(uint8_t note) {
         // cache にある場合は消す
-        volatile NoteCache* p_cache = &cache[0];
+        NoteCache* p_cache = &cache[0];
         for(uint8_t n = 0; n < MAX_NOTES; ++n, ++p_cache) {
             if(p_cache->note == note && !p_cache->processed) {
                 p_cache->processed = true;
@@ -660,7 +660,7 @@ public:
 
         // 配列のキャッシュ用
         volatile Note* p_note;
-        volatile NoteCache* p_cache;
+        NoteCache* p_cache;
         volatile uint32_t* p_osc1_phase;
         volatile uint32_t* p_osc2_phase;
         volatile uint32_t* p_osc1_phase_delta;
@@ -705,13 +705,12 @@ public:
         for (size_t i = 0; i < size; ++i, ++p_buffer_L, ++p_buffer_R) {
             // notesの1アドレス
             p_note = &notes[1];
-            p_cache = &cache[1];
 
             // core1で半分計算
             /*core1*/ calc_mode = CALC_NOTE;
 
             // 1, 3, 5...
-            for (uint8_t n = 1; n < MAX_NOTES; n += 2, p_note += 2, p_cache += 2) {
+            for (uint8_t n = 1; n < MAX_NOTES; n += 2, p_note += 2) {
                 if (!p_note->active) continue;
 
                 // 初期化
@@ -863,7 +862,22 @@ public:
                 } else {
                     noteReset();
                 }
+            }
 
+            // core1を待つ
+            while(calc_mode == CALC_NOTE);
+
+            *p_buffer_L += calc_result_L;
+            *p_buffer_R += calc_result_R;
+
+            // core1で次Rのパン・フィルター計算
+            /*core1*/ calc_r = *p_buffer_R;
+            /*core1*/ calc_mode = CALC_PAN_FILTER;
+
+            // core1では処理できないのでこちらで処理
+            p_note = &notes[0];
+            p_cache = &cache[0];
+            for (uint8_t n = 0; n < MAX_NOTES; ++n, ++p_note, ++p_cache) {
                 // アタック終了したらディケイへ
                 if (p_note->attack_cnt >= p_note->attack) {
                     p_note->attack_cnt = -1;
@@ -891,16 +905,6 @@ public:
                     p_note->decay_cnt = -1;
                 }
             }
-
-            // core1を待つ
-            while(calc_mode == CALC_NOTE);
-
-            *p_buffer_L += calc_result_L;
-            *p_buffer_R += calc_result_R;
-
-            // core1で次Rのパン・フィルター計算
-            /*core1*/ calc_r = *p_buffer_R;
-            /*core1*/ calc_mode = CALC_PAN_FILTER;
 
             // パン処理
             *p_buffer_L = (*p_buffer_L * PAN_COS_TABLE[pan_local]) / INT16_MAX;
@@ -1229,7 +1233,6 @@ public:
 
             // 配列のキャッシュ用
             volatile Note* p_note;
-            volatile NoteCache* p_cache;
             volatile uint32_t* p_osc1_phase;
             volatile uint32_t* p_osc2_phase;
             volatile uint32_t* p_osc1_phase_delta;
@@ -1247,13 +1250,12 @@ public:
 
             // notesの先頭アドレス
             p_note = &notes[0];
-            p_cache = &cache[0];
 
             calc_result_L = 0;
             calc_result_R = 0;
 
             // 0, 2, 4...
-            for (uint8_t n = 0; n < MAX_NOTES; n += 2, p_note += 2, p_cache += 2) {
+            for (uint8_t n = 0; n < MAX_NOTES; n += 2, p_note += 2) {
                 if (!p_note->active) continue;
 
                 // 初期化
@@ -1404,33 +1406,6 @@ public:
 
                 } else {
                     noteReset();
-                }
-
-                // アタック終了したらディケイへ
-                if (p_note->attack_cnt >= p_note->attack) {
-                    p_note->attack_cnt = -1;
-                    p_note->decay_cnt = p_note->decay;
-                }
-
-                // リリースが終了
-                else if (p_note->release_cnt == 0 || p_note->force_release_cnt == 0) {
-                    p_note->release_cnt = -1;
-                    p_note->active = false;
-                    p_note->note = 0xff;
-                    p_note->gain = 0;
-
-                    updateActNumOff(n); // 更新してから-1にする
-                    p_note->actnum = -1;
-
-                    if(!p_cache->processed) {
-                        p_cache->processed = true;
-                        noteOn(p_cache->note, p_cache->velocity, true, n);
-                    }
-                }
-
-                // ディケイが終了
-                else if (p_note->decay_cnt == 0) {
-                    p_note->decay_cnt = -1;
                 }
             }
 
