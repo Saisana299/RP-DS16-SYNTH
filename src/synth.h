@@ -11,10 +11,6 @@
 #define FIXED_ONE (1 << FIXED_SHIFT)
 #define PI_4 ((int32_t)(M_PI_4 * FIXED_ONE))
 
-// TODO 別でnoiseオシレータ追加(比較的軽量？)
-// TODO sub oscをsubに変更
-// TODO 基本波形からnoiseを削除
-
 /* --- 後々実装・確認すること ---*/
 // LFO...
 // パルスウィズモジュレーション
@@ -954,9 +950,6 @@ public:
                 else if(osc == 0x02) osc2_wave = square;
                 else if(osc == 0x03) osc_sub_wave = square;
                 break;
-            case 0x04:
-                // TODO
-                break;
             case 0xff:
                 if(osc == 0x01) {
                     osc1_wave = nullptr;
@@ -1174,8 +1167,16 @@ public:
         }
     }
 
-    void setRingModulation(bool enable = true) {
-        ring_modulation = enable;
+    void setMod(uint8_t mod) {
+        switch (mod) {
+            case 0x00:
+                ring_modulation = false;
+                break;
+
+            case 0x01:
+                ring_modulation = true;
+                break;
+        }
     }
 
     bool isDelayEnabled() {

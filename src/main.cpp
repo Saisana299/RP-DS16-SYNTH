@@ -284,6 +284,14 @@ void receiveEvent(int bytes) {
                 }
             }
             break;
+
+        // 例: {SYNTH_SET_MOD, <mod>}
+        case SYNTH_SET_MOD:
+            if(bytes < 2) return;
+            {
+                wave.setMod(receivedData[1]);
+            }
+            break;
     }
 }
 

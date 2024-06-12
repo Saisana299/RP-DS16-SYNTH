@@ -41,6 +41,7 @@
 #define SYNTH_SET_LPF     0xD2 // ローパスフィルタを設定
 #define SYNTH_SET_HPF     0xD3 // ハイパスフィルタを設定
 #define SYNTH_SET_DELAY   0xD4 // ディレイを設定
+#define SYNTH_SET_MOD     0xD5 // モジュレーション設定
 
 
 //// 共通シンセ演奏状態コード
