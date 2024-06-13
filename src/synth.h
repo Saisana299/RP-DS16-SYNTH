@@ -15,7 +15,6 @@
 // LFO...
 // パルスウィズモジュレーション
 // FM?
-// portamento?
 // morph?
 
 class WaveGenerator {
@@ -68,11 +67,15 @@ private:
     struct Note {
         uint32_t osc1_phase[MAX_VOICE];
         uint32_t osc2_phase[MAX_VOICE];
+        uint32_t osc_sub_phase;
+
         uint32_t osc1_phase_delta[MAX_VOICE];
         uint32_t osc2_phase_delta[MAX_VOICE];
-
-        uint32_t osc_sub_phase;
         uint32_t osc_sub_phase_delta;
+
+        uint32_t osc1_glide_delta[MAX_VOICE];
+        uint32_t osc2_glide_delta[MAX_VOICE];
+        uint32_t osc_sub_glide_delta;
 
         bool active;
         int8_t actnum;
@@ -104,6 +107,12 @@ private:
 
     volatile Note notes[MAX_NOTES]; // core1でも使用
     NoteCache cache[MAX_NOTES];
+
+    // グライド用
+    volatile bool monophonic = false; // モノフォニック
+    volatile bool glide_mode = false; // グライドモードが有効か
+    volatile bool isGlided = false; // グライドモード有効後にノートが押されたか
+    volatile uint16_t glide_time = 15; // ms
 
     // Master
     int16_t amp_gain = 1024; // 1.0% = 1024 (in1000 = out1024)
@@ -529,11 +538,18 @@ public:
             return;
         }
 
-        int8_t i = getOldNote();
-        if(isActiveNote(note)) {
-            i = getNoteIndex(note);
+        int8_t i = -1;
+
+        if(!monophonic) {
+            i = getOldNote();
+            if(isActiveNote(note)) {
+                i = getNoteIndex(note);
+            }
+            if(isCache) i = cacheIndex;
         }
-        if(isCache) i = cacheIndex;
+        else {
+            i = 0;
+        }
         if(i == -1) return;
 
         if(notes[i].active && !isCache) {
@@ -1238,6 +1254,8 @@ public:
             volatile uint32_t* p_osc2_phase;
             volatile uint32_t* p_osc1_phase_delta;
             volatile uint32_t* p_osc2_phase_delta;
+            volatile uint32_t* p_osc1_glide_delta;
+            volatile uint32_t* p_osc2_glide_delta;
             volatile int32_t (*p_osc1_spread_pan)[2];
             volatile int32_t (*p_osc2_spread_pan)[2];
 
@@ -1383,27 +1401,89 @@ public:
                     p_osc2_phase = &p_note->osc2_phase[0];
                     p_osc1_phase_delta = &p_note->osc1_phase_delta[0];
                     p_osc2_phase_delta = &p_note->osc2_phase_delta[0];
+                    p_osc1_glide_delta = &p_note->osc1_glide_delta[0];
+                    p_osc2_glide_delta = &p_note->osc2_glide_delta[0];
 
-                    // OSC1 次の位相へ
-                    if(osc1_v == 1) {
-                        *p_osc1_phase += *p_osc1_phase_delta;
+                    // glideモードかつisGlidedかつモノフォニックの場合
+                    if(glide_mode && isGlided && monophonic) {
+                        // OSC1 次の位相へ
+                        if(osc1_v == 1) {
+                            *p_osc1_glide_delta = lerp(*p_osc1_glide_delta, *p_osc1_phase_delta, 1.0f / (glide_time * SAMPLE_RATE / 1000.0f));
+                            *p_osc1_phase += *p_osc1_glide_delta;
+                        }
+                        else {
+                            for(d = 0; d < osc1_v; ++d, ++p_osc1_phase, ++p_osc1_phase_delta, ++p_osc1_glide_delta) {
+                                *p_osc1_glide_delta = lerp(*p_osc1_glide_delta, *p_osc1_phase_delta, 1.0f / (glide_time * SAMPLE_RATE / 1000.0f));
+                                *p_osc1_phase += *p_osc1_glide_delta;
+                            }
+                        }
+                        // OSC2 次の位相へ
+                        if(osc2_v == 1) {
+                            *p_osc2_glide_delta = lerp(*p_osc2_glide_delta, *p_osc2_phase_delta, 1.0f / (glide_time * SAMPLE_RATE / 1000.0f));
+                            *p_osc2_phase += *p_osc2_glide_delta;
+                        }
+                        else {
+                            for(d = 0; d < osc2_v; ++d, ++p_osc2_phase, ++p_osc2_phase_delta) {
+                                *p_osc2_glide_delta = lerp(*p_osc2_glide_delta, *p_osc2_phase_delta, 1.0f / (glide_time * SAMPLE_RATE / 1000.0f));
+                                *p_osc2_phase += *p_osc2_glide_delta;
+                            }
+                        }
+                        // OSC SUB 次の位相へ
+                        p_note->osc_sub_glide_delta = lerp(p_note->osc_sub_glide_delta, p_note->osc_sub_phase_delta, 1.0f / (glide_time * SAMPLE_RATE / 1000.0f));
+                        p_note->osc_sub_phase += p_note->osc_sub_glide_delta;
                     }
+
+                    // isGlidedではない場合
                     else {
-                        for(d = 0; d < osc1_v; ++d, ++p_osc1_phase, ++p_osc1_phase_delta) {
+                        // glidemodeならphase_deltaをキャッシュし、isGlidedをtrueにする。
+                        if(glide_mode && !isGlided && monophonic) {
+                            if(osc1_v == 1) {
+                                *p_osc1_glide_delta = *p_osc1_phase_delta;
+                            }
+                            else {
+                                for(d = 0; d < osc1_v; ++d, ++p_osc1_phase_delta, ++p_osc1_glide_delta) {
+                                    *p_osc1_glide_delta = *p_osc1_phase_delta;
+                                }
+                            }
+                            // OSC2 次の位相へ
+                            if(osc2_v == 1) {
+                                *p_osc2_glide_delta = *p_osc2_phase_delta;
+                            }
+                            else {
+                                for(d = 0; d < osc2_v; ++d, ++p_osc2_phase_delta, ++p_osc2_glide_delta) {
+                                    *p_osc2_glide_delta = *p_osc2_phase_delta;
+                                }
+                            }
+                            p_note->osc_sub_glide_delta = p_note->osc_sub_phase_delta;
+
+                            p_osc1_phase_delta = &p_note->osc1_phase_delta[0];
+                            p_osc2_phase_delta = &p_note->osc2_phase_delta[0];
+                            p_osc1_glide_delta = &p_note->osc1_glide_delta[0];
+                            p_osc2_glide_delta = &p_note->osc2_glide_delta[0];
+                            isGlided = true;
+                        }
+
+                        // OSC1 次の位相へ
+                        if(osc1_v == 1) {
                             *p_osc1_phase += *p_osc1_phase_delta;
                         }
-                    }
-                    // OSC2 次の位相へ
-                    if(osc2_v == 1) {
-                        *p_osc2_phase += *p_osc2_phase_delta;
-                    }
-                    else {
-                        for(d = 0; d < osc2_v; ++d, ++p_osc2_phase, ++p_osc2_phase_delta) {
+                        else {
+                            for(d = 0; d < osc1_v; ++d, ++p_osc1_phase, ++p_osc1_phase_delta) {
+                                *p_osc1_phase += *p_osc1_phase_delta;
+                            }
+                        }
+                        // OSC2 次の位相へ
+                        if(osc2_v == 1) {
                             *p_osc2_phase += *p_osc2_phase_delta;
                         }
+                        else {
+                            for(d = 0; d < osc2_v; ++d, ++p_osc2_phase, ++p_osc2_phase_delta) {
+                                *p_osc2_phase += *p_osc2_phase_delta;
+                            }
+                        }
+                        // OSC SUB 次の位相へ
+                        p_note->osc_sub_phase += p_note->osc_sub_phase_delta;
                     }
-                    // OSC SUB 次の位相へ
-                    p_note->osc_sub_phase += p_note->osc_sub_phase_delta;
 
                 } else {
                     noteReset();
