@@ -16,6 +16,7 @@
 // パルスウィズモジュレーション
 // FM?
 // morph?
+// エイリアシングの確認
 
 class WaveGenerator {
 private:
@@ -1195,6 +1196,26 @@ public:
         }
     }
 
+    void setMonophonic(bool enable) {
+        monophonic = enable;
+        if(!enable) {
+            glide_mode = false;
+            isGlided = false;
+        }
+    }
+
+    void setGlideMode(bool enable, uint16_t time = 15) {
+        if(enable && monophonic) {
+            glide_mode = true;
+            isGlided = false;
+            glide_time = time;
+        }
+        else if(!enable) {
+            glide_mode = false;
+            isGlided = false;
+        }
+    }
+
     bool isDelayEnabled() {
         return delay_enabled;
     }
@@ -1517,10 +1538,3 @@ public:
         }
     }
 };
-
-// /*debug*/ unsigned long startTime = micros();
-// /*debug*/ unsigned long endTime = micros();
-// /*debug*/ unsigned long duration = endTime - startTime;
-// /*debug*/ Serial2.print(":");
-// /*debug*/ Serial2.print(duration);
-// /*debug*/ Serial2.println("us");

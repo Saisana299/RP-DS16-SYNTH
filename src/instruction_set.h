@@ -42,6 +42,8 @@
 #define SYNTH_SET_HPF     0xD3 // ハイパスフィルタを設定
 #define SYNTH_SET_DELAY   0xD4 // ディレイを設定
 #define SYNTH_SET_MOD     0xD5 // モジュレーション設定
+#define SYNTH_SET_MONO    0xD6 // モノフォニックを設定
+#define SYNTH_SET_GLIDE   0xD7 // グライドを設定
 
 
 /// 共通シンセ演奏状態コード

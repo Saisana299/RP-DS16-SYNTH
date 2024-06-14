@@ -292,6 +292,32 @@ void receiveEvent(int bytes) {
                 wave.setMod(receivedData[1]);
             }
             break;
+
+        // 例: {SYNTH_SET_MONO, <true|false>}
+        case SYNTH_SET_MONO:
+            if(bytes < 2) return;
+            {
+                if(receivedData[1] == 0x01) wave.setMonophonic(true);
+                else wave.setMonophonic(false);
+            }
+            break;
+
+        // 例: {SYNTH_SET_GLIDE, <true|false>, <HB_time>, <LB_time>}
+        case SYNTH_SET_GLIDE:
+            if(bytes < 2) return;
+            {
+                if(receivedData[1] == 0x01) {
+                    if(bytes >= 4) {
+                        uint16_t time = static_cast<uint16_t>((receivedData[2] << 8) | receivedData[3]);
+                        wave.setGlideMode(true, time);
+                    }
+                    else wave.setGlideMode(true);
+                }
+                else {
+                    wave.setGlideMode(false);
+                }
+            }
+            break;
     }
 }
 
