@@ -1206,6 +1206,8 @@ public:
 
     void setGlideMode(bool enable, uint16_t time = 15) {
         if(enable && monophonic) {
+            if(time > 3000) time = 3000;
+            else if(time < 1) time = 1;
             glide_mode = true;
             isGlided = false;
             glide_time = time;
