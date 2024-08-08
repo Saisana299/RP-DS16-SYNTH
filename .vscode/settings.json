@@ -14,6 +14,10 @@
         "initializer_list": "cpp",
         "memory": "cpp",
         "algorithm": "cpp",
-        "random": "cpp"
+        "random": "cpp",
+        "deque": "cpp",
+        "list": "cpp",
+        "unordered_map": "cpp",
+        "vector": "cpp"
     }
 }

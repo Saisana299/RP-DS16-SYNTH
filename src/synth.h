@@ -17,6 +17,7 @@
 // FM?
 // morph?
 // エイリアシングの確認
+// パラメータ変更時の動作確認
 
 class WaveGenerator {
 private:

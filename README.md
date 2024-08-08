@@ -6,7 +6,7 @@ RP2040を利用したWavetableシンセ「RP-DS16」のシンセ部
 
 ## 概要
 - RP2040
-    - オーバークロック - 280MHz
+    - オーバークロック - 266MHz
     - CTRLとの通信に I2C0 を使用
 - DAC
     - PCM5102A - [LCSC](https://www.lcsc.com/product-detail/ADC-DAC-Specialized_Texas-Instruments-PCM5102APWR_C107671.html)
@@ -32,3 +32,5 @@ RP2040を利用したWavetableシンセ「RP-DS16」のシンセ部
 | GP20 | DIN | SDATA |
 | GP21 | BCK | BCLK |
 | GP22 | LRCK | LRCLK |
+
+## シンセ仕様
