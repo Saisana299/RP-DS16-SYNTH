@@ -1,5 +1,5 @@
 # RP-DS16-SYNTH
-[![GitHub license](https://img.shields.io/badge/RP--DS16-Rev.2.0-seagreen)](https://github.com/Saisana299/RP-DS16)　
+[![GitHub license](https://img.shields.io/badge/RP--DS16-Rev.3.0-seagreen)](https://github.com/Saisana299/RP-DS16)　
 
 RP2040を利用したWavetableシンセ「RP-DS16」のシンセ部  
 音の生成、DACの制御
@@ -34,3 +34,12 @@ RP2040を利用したWavetableシンセ「RP-DS16」のシンセ部
 | GP22 | LRCK | LRCLK |
 
 ## シンセ仕様
+- ポリフォニックモード（最大8音）
+- モノフォニックモード
+- 2つの基本 OSC と Sub、Noise オシレータ
+- ユニゾン機能（最大8ボイス）
+- ポルタメント機能（モノフォニックモードのみ）
+- 加算／リングモジュレーション
+- ローパス／ハイパスフィルター
+- ディレイエフェクト
+- MIDI1.0 互換
