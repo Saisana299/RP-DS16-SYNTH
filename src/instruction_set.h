@@ -44,6 +44,7 @@
 #define SYNTH_SET_MOD     0xD5 // モジュレーション設定
 #define SYNTH_SET_MONO    0xD6 // モノフォニックを設定
 #define SYNTH_SET_GLIDE   0xD7 // グライドを設定
+#define SYNTH_RESET_PARAM 0xD8 // パラメータをリセット
 
 
 /// 共通シンセ演奏状態コード

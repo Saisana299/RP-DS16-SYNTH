@@ -318,6 +318,14 @@ void receiveEvent(int bytes) {
                 }
             }
             break;
+
+        // 例: {SYNTH_RESET_PARAM}
+        case SYNTH_RESET_PARAM:
+            if(bytes < 1) return;
+            {
+                wave.resetParam();
+            }
+            break;
     }
 }
 

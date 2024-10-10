@@ -1253,6 +1253,57 @@ public:
     }
 
     /**
+     * @brief シンセのパラメータをリセットします
+     */
+    void resetParam() {
+        // 波形リセット
+        setShape(0xff, 0x01);
+        setShape(0xff, 0x02);
+        setShape(0xff, 0x03);
+        // ADSRリセット
+        setAttack(1);
+        setDecay(1000);
+        setSustain(1000);
+        setRelease(10);
+        // Chorusリセット
+        setVoice(1, 0x01);
+        setVoice(1, 0x02);
+        setDetune(20, 0x01);
+        setDetune(20, 0x02);
+        setSpread(0, 0x01);
+        setSpread(0, 0x02);
+        // LP/HPリセット
+        setLowPassFilter(false);
+        setHighPassFilter(false);
+        // OSCリセット
+        setOscLevel(0x01, 1000);
+        setOscLevel(0x02, 1000);
+        setOscLevel(0x03, 1000);
+        setOscPan(0x01, 50);
+        setOscPan(0x02, 50);
+        setOscPan(0x03, 50);
+        setOscOctave(0x01, 0);
+        setOscOctave(0x02, 0);
+        setOscOctave(0x03, 0);
+        setOscSemitone(0x01, 0);
+        setOscSemitone(0x02, 0);
+        setOscSemitone(0x03, 0);
+        setOscCent(0x01, 0);
+        setOscCent(0x02, 0);
+        setOscCent(0x03, 0);
+        // Ampリセット
+        setAmpLevel(1000);
+        setAmpPan(50);
+        // Delayリセット
+        setDelay(false);
+        // Modulationリセット
+        setMod(0x00);
+        // Monophonicリセット
+        setMonophonic(false);
+        setGlideMode(false);
+    }
+
+    /**
      * @brief CORE1で負荷分散処理
      * 非CALC_IDLE時の変数アクセスに注意
      */
