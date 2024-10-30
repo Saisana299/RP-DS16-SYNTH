@@ -28,22 +28,22 @@ TwoWire& i2c = Wire;
 #define BUFFER_SIZE 256
 
 I2S i2s(OUTPUT);
-#define SAMPLE_BITS 16
-#define SAMPLE_RATE 48000
+#define SAMPLE_BITS 16    // サンプリングビット数
+#define SAMPLE_RATE 48000 // サンプリング周波数
 
 // その他
-WaveGenerator wave(48000);
-int16_t buffer_L[BUFFER_SIZE];
-int16_t buffer_R[BUFFER_SIZE];
+WaveGenerator wave(SAMPLE_RATE);
+int16_t buffer_L[BUFFER_SIZE]; // L側バッファ
+int16_t buffer_R[BUFFER_SIZE]; // R側バッファ
 
-bool isLed = false;
-uint32_t* delay_long;
-uint32_t remain = 0;
+bool isLed = false;   // LED点灯フラグ
+uint32_t* delay_long; // synth.h
+uint32_t remain = 0;  // ディレイの残りカウント用
 
-uint16_t buff_i = 0;
-int16_t cshape_buff[2048];
+uint16_t buff_i = 0;       // ユーザー波形のバッファカウント用
+int16_t cshape_buff[2048]; // ユーザー波形のバッファ
 
-uint8_t response = 0x00;
+uint8_t response = 0x00; // レスポンスコード
 
 void receiveEvent(int bytes) {
     // 1バイト以上のみ受け付ける
@@ -51,6 +51,7 @@ void receiveEvent(int bytes) {
 
     int i = 0;
     uint8_t receivedData[bytes];
+    // 受信データをバッファに格納
     while (i2c.available()) {
         uint8_t received = i2c.read();
         receivedData[i] = received;
@@ -60,8 +61,10 @@ void receiveEvent(int bytes) {
         }
     }
 
+    // 命令コードを取得
     uint8_t instruction = receivedData[0];
 
+    // 命令コードに応じた処理
     switch (instruction)
     {
         // 例: {SYNTH_NOTE_ON, <note>, <velocity>}
@@ -102,7 +105,7 @@ void receiveEvent(int bytes) {
             wave.setAmpPan(receivedData[1]);
             break;
 
-        // 例: {SYNTH_SET_ATTACK, 0x00, 0x30, 0x00, 0x00, 0x00}
+        // 例: {SYNTH_SET_ATTACK, <sec>, <msec>, <msec>, <msec>, <msec>}
         case SYNTH_SET_ATTACK:
         case SYNTH_SET_DECAY:
         case SYNTH_SET_RELEASE:
@@ -126,7 +129,7 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {SYNTH_SET_SUSTAIN, 0x30, 0x00, 0x00, 0x00}
+        // 例: {SYNTH_SET_SUSTAIN, <msec>, <msec>, <msec>, <msec>}
         case SYNTH_SET_SUSTAIN:
             if(bytes < 5) return;
             {
@@ -144,7 +147,7 @@ void receiveEvent(int bytes) {
             response = wave.getActiveNote();
             break;
 
-        // 例: {SYNTH_IS_NOTE, 0x64}
+        // 例: {SYNTH_IS_NOTE, <note>}
         case SYNTH_IS_NOTE:
             if(wave.isNote(receivedData[1])) response = 0x01;
             else response = 0x00;
@@ -169,7 +172,7 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {SYNTH_SET_VOICE, 0x01, 0x01}
+        // 例: {SYNTH_SET_VOICE, <voice>, <osc>}
         case SYNTH_SET_VOICE:
             if(bytes < 3) return;
             {
@@ -177,7 +180,7 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {SYNTH_SET_DETUNE, 0xA2, 0x01}
+        // 例: {SYNTH_SET_DETUNE, <detune>, <osc>}
         case SYNTH_SET_DETUNE:
             if(bytes < 3) return;
             {
@@ -185,7 +188,7 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {SYNTH_SET_SPREAD, 0xA2, 0x01}
+        // 例: {SYNTH_SET_SPREAD, <spread>, <osc>}
         case SYNTH_SET_SPREAD:
             if(bytes < 3) return;
             {
@@ -193,8 +196,8 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {SYNTH_SET_LPF, 0x01, 0x22...}
-        // 例: {SYNTH_SET_LPF, 0x00}
+        // 例: {SYNTH_SET_LPF, <bool>, 0x22...}
+        // 例: {SYNTH_SET_LPF, 0x00(false)}
         case SYNTH_SET_LPF:
             if(bytes < 2) return;
             {
@@ -211,8 +214,8 @@ void receiveEvent(int bytes) {
             }
             break;
 
-        // 例: {SYNTH_SET_HPF, 0x01, 0x22...}
-        // 例: {SYNTH_SET_HPF, 0x00}
+        // 例: {SYNTH_SET_HPF, <bool>, 0x22...}
+        // 例: {SYNTH_SET_HPF, 0x00(false)}
         case SYNTH_SET_HPF:
             if(bytes < 2) return;
             {
@@ -358,6 +361,10 @@ void setup() {
     delay_long = wave.getDelayLong();
 }
 
+/**
+ * @brief メインループ
+ * 波形生成の実行とディレイの処理を行う
+ */
 void loop() {
     while (1) {
         if (wave.getActiveNote() != 0) {
@@ -370,7 +377,7 @@ void loop() {
                 wave.generate(buffer_L, buffer_R, BUFFER_SIZE); // 目標: 5ミリ秒以内に完了する
                 // /*debug*/ unsigned long endTime = micros();
                 // /*debug*/ unsigned long duration = endTime - startTime;
-                // /*debug*/ Serial2.print(":");
+                // /*debug*/ Serial2.print(" ");
                 // /*debug*/ Serial2.print(duration);
                 // /*debug*/ Serial2.println("us");
                 buffer_index = 0;
@@ -397,6 +404,10 @@ void loop() {
     }
 }
 
+/**
+ * @brief CORE1で処理するループ
+ * LED点灯処理と波形生成の分散処理を行う
+ */
 void loop1() {
     while(1) {
         if(isLed) {
@@ -404,6 +415,6 @@ void loop1() {
         } else {
             gpio_put(LED_BUILTIN, LOW);
         }
-        wave.calculate();
+        wave.generate1(); // 分散処理用関数
     }
 }
