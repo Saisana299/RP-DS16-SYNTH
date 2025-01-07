@@ -338,7 +338,6 @@ void requestEvent() {
 }
 
 void setup() {
-
     i2c.setSDA(SDA_PIN);
     i2c.setSCL(SCL_PIN);
     i2c.begin(I2C_ADDR);

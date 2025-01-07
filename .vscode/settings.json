@@ -19,6 +19,8 @@
         "list": "cpp",
         "unordered_map": "cpp",
         "vector": "cpp",
-        "cstdint": "cpp"
+        "cstdint": "cpp",
+        "semaphore": "cpp",
+        "stop_token": "cpp"
     }
 }
