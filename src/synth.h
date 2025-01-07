@@ -11,6 +11,8 @@
 #define FIXED_ONE (1 << FIXED_SHIFT)
 #define PI_4 ((int32_t)(M_PI_4 * FIXED_ONE))
 
+// プログラムが複雑化している
+
 /* --- 後々実装・確認すること ---*/
 // FilterEG (全体に適用) プリセット編集画面->FILTERから設定 noteon/offのたびにattackとrelease
 // OSCEG (各ノートに適用) 音程の変調
@@ -25,8 +27,6 @@
 // エイリアシングの確認
 // パラメータ変更時の動作確認
 // リアルタイムでパラメータ変更(MIDI CC)
-
-// プログラムが複雑化している
 
 class WaveGenerator {
 private:
@@ -194,18 +194,6 @@ private:
     int32_t hp_in1_R = 0, hp_in2_R = 0;
     int32_t hp_out1_L = 0, hp_out2_L = 0;
     int32_t hp_out1_R = 0, hp_out2_R = 0;
-
-    // フィルタ用エンベロープ(Effect)
-    bool filter_env_enabled = false;
-    int16_t filter_S_level = 1024; // 1.0% = 1024 (in1000 = out1024)
-    int32_t filter_A_sample = (1 * SAMPLE_RATE) >> 10;
-    int32_t filter_D_sample = (SAMPLE_RATE << 10) >> 10;
-    int32_t filter_R_sample = (10 * SAMPLE_RATE) >> 10;
-    int32_t filter_FR_sample = (10 * SAMPLE_RATE) >> 10;
-    int32_t filter_A_cnt = -1;
-    int32_t filter_D_cnt = -1;
-    int32_t filter_R_cnt = -1;
-    int32_t filter_FR_cnt = -1;
 
     // ディレイエフェクト(Effect)
     RingBuffer ringbuff_L, ringbuff_R;
@@ -586,11 +574,6 @@ public:
             notes[i].attack_cnt = -1;
             notes[i].decay_cnt = -1;
 
-            // filterEG
-            filter_FR_cnt = filter_FR_sample;
-            filter_D_cnt = -1;
-            filter_A_cnt = -1;
-
             // Cacheに保存
             cache[i].processed = false;
             cache[i].note = note;
@@ -607,9 +590,6 @@ public:
         // AMP ADSR
         notes[i].attack_cnt = 0;
 
-        // FilterEG
-        filter_A_cnt = 0;
-
         if(notes[i].note == 0xff) {
             resetPhase(i);
         }
@@ -625,10 +605,6 @@ public:
         notes[i].force_release_cnt = -1;
         notes[i].note = note;
         notes[i].gain = ((amp_gain / MAX_NOTES) * ((velocity << 10) / 127)) >> 10;
-
-        // FilterEG
-        filter_R_cnt = -1;
-        filter_FR_cnt = -1;
 
         if(isCache) updateActNumOn(i);
 
@@ -669,10 +645,6 @@ public:
 
         notes[i].attack_cnt = -1;
         notes[i].decay_cnt = -1;
-
-        // FilterEG
-        filter_A_cnt = -1;
-        filter_D_cnt = -1;
    }
 
     void noteReset() {
@@ -698,12 +670,6 @@ public:
             p_note->decay = decay_sample;
             p_note->release = release_sample;
         }
-
-        // FilterEG
-        filter_A_cnt = -1;
-        filter_D_cnt = -1;
-        filter_R_cnt = -1;
-        filter_FR_cnt = -1;
     }
 
     void setShape(uint8_t id, uint8_t osc) {
@@ -1638,37 +1604,6 @@ public:
                 } else {
                     noteReset();
                 }
-            }
-
-            // FilterEG
-            if (filter_env_enabled) {
-                //adsr_gain = 0;
-
-                // アタック
-                if (filter_A_cnt >= 0 && filter_A_cnt < filter_A_sample) {
-                    //adsr_gain = (p_note->attack_cnt << 10) / p_note->attack;
-                    filter_A_cnt++;
-                }
-                // 強制リリース
-                else if (filter_FR_cnt >= 0) {
-                    //adsr_gain = (p_note->note_off_gain * p_note->force_release_cnt) / p_note->force_release;
-                    if (filter_FR_cnt > 0) filter_FR_cnt--;
-                }
-                // リリース
-                else if (filter_R_cnt >= 0) {
-                    //adsr_gain = (p_note->note_off_gain * p_note->release_cnt) / p_note->release;
-                    if (filter_R_cnt > 0) filter_R_cnt--;
-                }
-                // ディケイ
-                else if (filter_D_cnt >= 0) {
-                    //adsr_gain = p_note->sustain + (p_note->level_diff * p_note->decay_cnt) / p_note->decay;
-                    if (filter_D_cnt > 0) filter_D_cnt--;
-                }
-                // サステイン
-                else {
-                    //adsr_gain = p_note->sustain;
-                }
-                //p_note->adsr_gain = adsr_gain;
             }
 
             calc_mode = CALC_IDLE;
